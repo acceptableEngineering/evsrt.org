@@ -14,15 +14,39 @@
       <div class="row justify-content-md-center">
         <div class="col-sm-12 col-md-8">
           <h1>East Valley Simplex Net <span>(EVSN)</span></h1>
-          <h4>What:</h4>
+          <h4>What</h4>
           An informal net that's more of a ragchew, geared toward amateur radio operators in the East San Fernando Valley: Burbank, North Hollywood, Glendale, etc.). Informal, so come and go as you please<br /><br />
 
-          <h4>When / Where:</h4>
+          <h4>Why</h4>
+          To have fun, share advice, and get to know our ham neighbors<br /><br />
+
+          <h4>When / Where</h4>
           1st and 3rd Sunday of the month @ 9pm, <span class="special">146.450 MHz</span><br />
           <span class="small">Mode: FM &nbsp; PL: None</span><br /><br />
-
-          <h4>Why:</h4>
-          To have fun, share advice, and get to know our ham neighbors
+          Add to your calendar:<br />
+          Because the <code>.ics</code> spec does not support our <em>1st and 3rd</em> repetition, you'll need to add two separate events to your calendar:<br />
+          <add-to-calendar-button 
+            name="East Valley Simplex Net"
+            description="146.450 MHz, FM Mode, No PL Tone"
+            startDate="2024-05-05"
+            startTime="21:00"
+            endTime="22:00"
+            timeZone="America/Los_Angeles"
+            recurrence="RRULE:FREQ=MONTHLY;BYDAY=1SU"
+            options="'Apple','Google','iCal','Outlook.com','Microsoft365','MicrosoftTeams','Yahoo'"
+            label="Add: 1st Sunday"
+          ></add-to-calendar-button>
+          <add-to-calendar-button 
+          name="East Valley Simplex Net"
+          description="146.450 MHz, FM Mode, No PL Tone"
+          startDate="2024-05-19"
+          startTime="21:00"
+          endTime="22:00"
+          timeZone="America/Los_Angeles"
+          recurrence="RRULE:FREQ=MONTHLY;BYDAY=1SU"
+          options="'Apple','Google','iCal','Outlook.com','Microsoft365','MicrosoftTeams','Yahoo'"
+          label="Add: 3rd Sunday"
+        ></add-to-calendar-button>
           <hr />
         </div>
       </div>
@@ -31,51 +55,54 @@
     <script src="https://code.jquery.com/jquery-3.2.1.slim.min.js" integrity="sha384-KJ3o2DKtIkvYIK3UENzmM7KCkRr/rE9/Qpg6aAZGJwFDMVNA/GpGFF93hXpG5KkN" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/popper.js@1.12.9/dist/umd/popper.min.js" integrity="sha384-ApNbgh9B+Y1QKtv3Rn7W3mgPxhU9K/ScQsAP7hUibX39j7fakFPskvXusvfa0b4Q" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@4.0.0/dist/js/bootstrap.min.js" integrity="sha384-JZR6Spejh4U02d8jOt6vLEHfe/JQGiRRSQQxSfFWpi1MquVdAyjUar5+76PVCmYl" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/add-to-calendar-button@2" async defer></script>
   </body>
 <style>
-  body {
-    background-color: #000;
-    color: #fff;
-    font-family: "Courier New", monospace;
-    font-size: 1.15em;
-  }
-  h1 {
-    border-color: #333;
-    border-style: solid;
-    border-width: 0 0 1px 0;
-    color: #00ff00;
-    cursor: default;
-    font-size: 2.5rem;
-    font-family: "Jersey 25", sans-serif;
-    font-weight: 400;
-    font-style: normal;
-    letter-spacing: 3px;
-    margin-bottom: 2rem;
-    padding-bottom: 12px;
-  }
-  h1 span {
-    opacity: 0.6;
-  }
-  .container {
-    margin-top: 24px;
-    padding: 12px;
-  }
-  span.special {
-    white-space: nowrap;
-  }
-  span.small {
-    color: #ccc;
-    text-transform: uppercase;
-  }
-
-  ::-moz-selection { /* Code for Firefox */
-  color: #000;
-  background: #fff;
+body {
+  background-color: #000;
+  color: #fff;
+  font-family: "Courier New", monospace;
+  font-size: 1.15em;
 }
-
+h1 {
+  border-color: #333;
+  border-style: solid;
+  border-width: 0 0 1px 0;
+  color: #00ff00;
+  cursor: default;
+  font-size: 2.5rem;
+  font-family: "Jersey 25", sans-serif;
+  font-weight: 400;
+  font-style: normal;
+  letter-spacing: 3px;
+  margin-bottom: 2rem;
+  padding-bottom: 12px;
+}
+h1 span {
+  opacity: 0.6;
+}
+.container {
+  margin-top: 24px;
+  padding: 12px;
+}
+span.special {
+  white-space: nowrap;
+}
+span.small {
+  color: #ccc;
+  text-transform: uppercase;
+}
+::-moz-selection {
+color: #000;
+background: #fff;
+}
 ::selection {
   color: #000;
   background: #fff;
+}
+add-to-calendar-button {
+  display: inline-block;
+  margin: 12px 0 6px 0;
 }
 </style>
 </html>
