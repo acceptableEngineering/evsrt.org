@@ -30,4 +30,3 @@ jobs:
         fi
 
         aws s3 sync ./site/ s3://${S3_DEST}/ --region us-west-2 --cache-control max-age=120,must-revalidate --delete
-        aws s3 sync ./site/data/ s3://${S3_DEST}/data/ --region us-west-2 --cache-control max-age=0,must-revalidate --delete
