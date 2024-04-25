@@ -1,0 +1,33 @@
+name: Build/Deploy
+
+on:
+  push:
+    branches: main
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v3
+
+    - name: Configure AWS CLI SDK
+      uses: aws-actions/configure-aws-credentials@v2
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: us-east-1
+
+    - name: Deploy static content to S3
+      env:
+        AWS_S3_BUCKET_NAME: ${{ secrets.AWS_S3_BUCKET_NAME }}
+      run: |
+        GIT_BRANCH_SHORT=$(echo ${GITHUB_REF} | awk '{split($0,a,"/"); print a[3]}')
+        S3_DEST=${AWS_S3_BUCKET_NAME}/${GIT_BRANCH_SHORT}
+
+        if [ "${GIT_BRANCH_SHORT}" == 'main' ]; then
+          S3_DEST=${AWS_S3_BUCKET_NAME}
+        fi
+
+        aws s3 sync ./site/ s3://${S3_DEST}/ --region us-west-2 --cache-control max-age=120,must-revalidate --delete
+        aws s3 sync ./site/data/ s3://${S3_DEST}/data/ --region us-west-2 --cache-control max-age=0,must-revalidate --delete
