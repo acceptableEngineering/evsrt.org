@@ -1,12 +1,8 @@
 import json
+import os
 import requests
 from datetime import datetime
 from zoneinfo import ZoneInfo  # Python 3.9+
-
-DISCORD_WEBHOOKS = {
-    "#evsrt": "https://discord.com/api/webhooks/1364335676442546360/g9JyXOfU4IIDoaUDo5Xwf8oMxmFzk42T5feQvdkaLfwYOvyN6LApKkkiUlhRWPY_-fQz",
-    "#cw-club": "https://discord.com/api/webhooks/1369011481387208756/B7mM2zwxGP0Rrtoc4W3GX7n-Q_k1Jk0gdWArL1_ssMiEOwYwgNmdpljZ-a4KbmJ1GrSh"
-}
 
 SCHEDULES = [
     {
@@ -15,7 +11,7 @@ SCHEDULES = [
         "week_of_month": [1, 3],
         "hour": 12,
         "message": "@everyone 🚨 **EVSRT Tonight**\nWon't you join us at 9pm on 146.450 MHz?",
-        "channel": "#evsrt",
+        "channel": "evsrt",
     },
     {
         "name": "EVSRT Now",
@@ -23,7 +19,7 @@ SCHEDULES = [
         "week_of_month": [1, 3],
         "hour": 21,
         "message": "@everyone 🚨 **EVSRT Starting NOW!**\nBe there, and be square: 146.450 MHz, FM, no PL. Log-in Sheet here: https://bit.ly/4d6fDA8",
-        "channel": "#evsrt",
+        "channel": "evsrt",
     },
     {
         "name": "Daily CW Practice Check-In",
@@ -31,7 +27,7 @@ SCHEDULES = [
         "week_of_month": [1,2,3,4,5],
         "hour": 21,
         "message": "Did you get your 15 minutes of CW practice in today? (For those in the blood pact) ⭐",
-        "channel": "#cw-club",
+        "channel": "cw_club",
     },
 ]
 
@@ -69,7 +65,7 @@ def get_weekday_occurrence_in_month(dt):
     return count
 
 def send_discord_message(item_obj):
-    webhook_url = DISCORD_WEBHOOKS[item_obj['channel']]
+    webhook_url = os.environ.get('webhook_' + item_obj['channel'])
     payload = {
         "content": f"{item_obj['message']}",
         "username": "HamBOT 🐷"
