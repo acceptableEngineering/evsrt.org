@@ -28,8 +28,8 @@ SCHEDULES = [
     {
         "name": "Daily CW Practice Check-In",
         "days_of_week": [0,1,2,3,4,5,6],
-        "week_of_month": [1,2,3,4],
-        "hour": 12,
+        "week_of_month": [1,2,3,4,5],
+        "hour": 21,
         "message": "Did you get your 15 minutes of CW practice in today? (For those in the blood pact) ⭐",
         "channel": "#cw-club",
     },
