@@ -30,3 +30,24 @@ jobs:
         fi
 
         aws s3 sync ./site/ s3://${S3_DEST}/ --region us-west-2 --cache-control max-age=120,must-revalidate --delete
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+
+    - name: Install dependencies and package Lambda
+      run: |
+        cd ./aws/lambda/discord-reminder-bot/
+        python -m pip install --upgrade pip
+        mkdir -p package
+        pip install -r requirements.txt -t package/
+        cp discord_reminder_bot.py package/
+        cd package && zip -r ../lambda.zip . && cd ..
+
+    - name: Update AWS Lambda Function
+      run: |
+        cd ./aws/lambda/discord-reminder-bot/
+        aws lambda update-function-code \
+          --function-name EVSRT-Reminder \
+          --zip-file fileb://lambda.zip
