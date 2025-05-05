@@ -42,7 +42,7 @@ jobs:
         python -m pip install --upgrade pip
         mkdir -p package
         pip install -r requirements.txt -t package/
-        cp discord_reminder_bot.py package/
+        cp lambda_function.py package/
         cd package && zip -r ../lambda.zip . && cd ..
 
     - name: Update AWS Lambda Function
