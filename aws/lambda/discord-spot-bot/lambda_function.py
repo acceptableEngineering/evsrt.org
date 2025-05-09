@@ -3,8 +3,11 @@ import requests
 import os
 
 def lambda_handler(event, context):
+    # Debugging: Log the raw event for troubleshooting
+    print("Raw Event Received:", json.dumps(event, indent=4))
+
     # Extract data from HamAlert payload
-    payload = event
+    payload = event if isinstance(event, dict) else json.loads(event)
     full_callsign = payload.get("fullCallsign", "N/A")
     callsign = payload.get("callsign", "N/A")
     frequency = payload.get("frequency", "N/A")
@@ -15,21 +18,33 @@ def lambda_handler(event, context):
     source = payload.get("source", "N/A")
     comment = payload.get("comment", "")
 
+    # Determine which webhook URL to use
     if source == "sotawatch":
         webhook_url = os.environ.get('webhook_sota')
     elif source == "pota":
         webhook_url = os.environ.get('webhook_pota')
-    else: # Don't send if not SOTA or POTA
-        return False
+    else:
+        print(f"Ignoring notification with source: {source}")
+        return {
+            "statusCode": 200,
+            "body": json.dumps({"message": f"Notification ignored. Source '{source}' is not SOTA or POTA."})
+        }
+
+    # Safety check for webhook URL
+    if not webhook_url:
+        print(f"No webhook URL configured for source: {source}")
+        return {
+            "statusCode": 500,
+            "body": json.dumps({"error": f"No webhook URL configured for source '{source}'."})
+        }
 
     # Format Discord message
     discord_message = {
-        "content": f"📡 New HamAlert Spot!\n\n"
+        "content": f"📡 **New {source.upper()} Spot Alert!**\n\n"
                    f"📌 **Callsign:** {full_callsign} ({callsign})\n"
                    f"🔊 **Frequency:** {frequency} MHz ({band})\n"
                    f"🎛️ **Mode:** {mode} ({mode_detail})\n"
                    f"👤 **Spotter:** {spotter}\n"
-                   f"🔗 **Source:** {source}\n"
                    f"💬 **Comment:** {comment}\n"
     }
 
@@ -37,11 +52,13 @@ def lambda_handler(event, context):
     try:
         response = requests.post(webhook_url, json=discord_message)
         response.raise_for_status()
+        print("Notification sent to Discord successfully.")
         return {
             "statusCode": 200,
             "body": json.dumps({"message": "Notification sent to Discord successfully."})
         }
     except requests.RequestException as e:
+        print(f"Error sending notification to Discord: {e}")
         return {
             "statusCode": 500,
             "body": json.dumps({"error": str(e)})
