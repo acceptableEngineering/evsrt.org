@@ -68,4 +68,3 @@ jobs:
         aws lambda update-function-code \
           --function-name EVSRT-HamAlert \
           --zip-file fileb://lambda.zip
-
