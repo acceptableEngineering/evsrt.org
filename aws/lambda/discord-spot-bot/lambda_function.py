@@ -47,7 +47,8 @@ def lambda_handler(event, context):
                    f"🔊 **Frequency:** {frequency} MHz ({band})\n"
                    f"🎛️ **Mode:** {mode} ({mode_detail})\n"
                    f"👤 **Spotter:** {spotter}\n"
-                   f"💬 **Comment:** {comment}\n"
+                   f"💬 **Comment:** {comment}\n",
+        "username": "HamBOT 🐷"
     }
 
     # Sending the message to Discord
