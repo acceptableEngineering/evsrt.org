@@ -8,6 +8,8 @@ def lambda_handler(event, context):
 
     # Extract data from HamAlert payload
     payload = event if isinstance(event, dict) else json.loads(event)
+    payload = json.loads(payload['body'])
+
     full_callsign = payload.get("fullCallsign", "N/A")
     callsign = payload.get("callsign", "N/A")
     frequency = payload.get("frequency", "N/A")
