@@ -36,7 +36,7 @@ jobs:
       with:
         python-version: '3.11'
 
-    - name: Install dependencies and package Lambda
+    - name: Build Lambda: discord-reminder-bot
       run: |
         cd ./aws/lambda/discord-reminder-bot/
         python -m pip install --upgrade pip
@@ -45,9 +45,26 @@ jobs:
         cp lambda_function.py package/
         cd package && zip -r ../lambda.zip . && cd ..
 
-    - name: Update AWS Lambda Function
+    - name: Upload Lambda: discord-reminder-bot
       run: |
         cd ./aws/lambda/discord-reminder-bot/
         aws lambda update-function-code \
           --function-name EVSRT-Reminder \
+          --zip-file fileb://lambda.zip
+
+
+    - name: Build Lambda: discord-spot-bot
+      run: |
+        cd ./aws/lambda/discord-spot-bot/
+        python -m pip install --upgrade pip
+        mkdir -p package
+        pip install -r requirements.txt -t package/
+        cp lambda_function.py package/
+        cd package && zip -r ../lambda.zip . && cd ..
+
+    - name: Upload Lambda: discord-spot-bot
+      run: |
+        cd ./aws/lambda/discord-spot-bot/
+        aws lambda update-function-code \
+          --function-name EVSRT-HamAlert \
           --zip-file fileb://lambda.zip
