@@ -36,7 +36,7 @@ jobs:
       with:
         python-version: '3.11'
 
-    - name: Build Lambda: discord-reminder-bot
+    - name: Build Lambda discord-reminder-bot
       run: |
         cd ./aws/lambda/discord-reminder-bot/
         python -m pip install --upgrade pip
@@ -45,7 +45,7 @@ jobs:
         cp lambda_function.py package/
         cd package && zip -r ../lambda.zip . && cd ..
 
-    - name: Upload Lambda: discord-reminder-bot
+    - name: Upload Lambda discord-reminder-bot
       run: |
         cd ./aws/lambda/discord-reminder-bot/
         aws lambda update-function-code \
@@ -53,7 +53,7 @@ jobs:
           --zip-file fileb://lambda.zip
 
 
-    - name: Build Lambda: discord-spot-bot
+    - name: Build Lambda discord-spot-bot
       run: |
         cd ./aws/lambda/discord-spot-bot/
         python -m pip install --upgrade pip
@@ -62,7 +62,7 @@ jobs:
         cp lambda_function.py package/
         cd package && zip -r ../lambda.zip . && cd ..
 
-    - name: Upload Lambda: discord-spot-bot
+    - name: Upload Lambda discord-spot-bot
       run: |
         cd ./aws/lambda/discord-spot-bot/
         aws lambda update-function-code \
