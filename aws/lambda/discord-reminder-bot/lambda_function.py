@@ -9,7 +9,7 @@ def cw_random_string():
         "Hey silly-face, did you get your 15 minutes of CW practice in today?",
         "Hey lazy-ass, did you get your 15 minutes of CW practice in today?",
         "PRACTICE CW FOR 15 MINUTES, AT LEAST!",
-        "Practice CW or die."
+        "Practice CW or die.",
         "Did you get your 15 minutes of CW practice in today?",
         "Not decoding 20 WPM yet, eh? Did you practice today? Mmm-hmm...",
         "You can decrease the number of people you will disappoint with your CW by practicing more. Did you practice today?",
