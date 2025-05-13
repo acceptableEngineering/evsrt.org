@@ -4,13 +4,29 @@ import requests
 from datetime import datetime
 from zoneinfo import ZoneInfo  # Python 3.9+
 
+def cw_random_string():
+    strings = [
+        "Hey silly-face, did you get your 15 minutes of CW practice in today?",
+        "Hey lazy-ass, did you get your 15 minutes of CW practice in today?",
+        "PRACTICE CW FOR 15 MINUTES, AT LEAST!",
+        "Practice CW or die.",
+        "Did you get your 15 minutes of CW practice in today?",
+        "Not decoding 20 WPM yet, eh? Did you practice today? Mmm-hmm...",
+        "You can decrease the number of people you will disappoint with your CW by practicing more. Did you practice today?",
+    ]
+
+    now_utc = datetime.utcnow()
+    now_pt = now_utc.replace(tzinfo=ZoneInfo("UTC")).astimezone(ZoneInfo("America/Los_Angeles"))
+
+    return strings[now_pt.weekday()]
+
 SCHEDULES = [
     {
         "name": "EVSRT Reminder",
         "days_of_week": [6],
         "week_of_month": [1, 3],
         "hour": 12,
-        "message": "@everyone 🚨 **EVSRT Tonight**\nWon't you join us at 9pm on 146.450 MHz?",
+        "message": "@everyone ⚠️ **EVSRT Tonight**\nWon't you join us at 9pm on 146.450 MHz?",
         "channel": "evsrt",
     },
     {
@@ -18,7 +34,7 @@ SCHEDULES = [
         "days_of_week": [6],
         "week_of_month": [1, 3],
         "hour": 21,
-        "message": "@everyone 🚨 **EVSRT Starting NOW!**\nBe there, and be square: 146.450 MHz, FM, no PL. Log-in Sheet here: https://bit.ly/4d6fDA8",
+        "message": "@everyone 🚨 **EVSRT Starting NOW!**\nBe there, and be square: 146.450 MHz, FM, no PL. Log Sheet: https://bit.ly/4d6fDA8",
         "channel": "evsrt",
     },
     {
@@ -26,7 +42,7 @@ SCHEDULES = [
         "days_of_week": [0,1,2,3,4,5,6],
         "week_of_month": [1,2,3,4,5],
         "hour": 21,
-        "message": "Did you get your 15 minutes of CW practice in today? (For those in the blood pact) ⭐",
+        "message": cw_random_string() + " (For those in the blood pact) ⭐",
         "channel": "cw_club",
     },
 ]
