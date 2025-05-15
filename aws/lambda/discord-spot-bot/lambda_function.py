@@ -25,6 +25,8 @@ def lambda_handler(event, context):
         webhook_url = os.environ.get('webhook_sota')
     elif source == "pota":
         webhook_url = os.environ.get('webhook_pota')
+    elif mode == "cw":
+        webhook_url = os.environ.get('webhook_cw_club')
     else:
         print(f"Ignoring notification with source: {source}")
         return {
