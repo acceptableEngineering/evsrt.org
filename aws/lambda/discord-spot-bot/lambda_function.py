@@ -18,7 +18,7 @@ def lambda_handler(event, context):
     mode_detail = payload.get("modeDetail", "N/A")
     spotter = payload.get("spotter", "N/A")
     source = payload.get("source", "N/A")
-    comment = payload.get("comment", "")
+    comment = payload.get("comment", "N/A")
 
     # Determine which webhook URL to use
     if source == "sotawatch":
@@ -45,9 +45,9 @@ def lambda_handler(event, context):
     # Format Discord message
     discord_message = {
         "content": f"📡 **New {source.upper()} Spot Alert!**\n\n"
-                   f"📌 **Callsign:** {full_callsign} ({callsign})\n"
+                   f"📌 **Callsign:** {full_callsign}\n"
                    f"🔊 **Frequency:** {frequency} MHz ({band})\n"
-                   f"🎛️ **Mode:** {mode} ({mode_detail})\n"
+                   f"🎛️ **Mode:** {mode.upper()} ({mode_detail.upper()})\n"
                    f"👤 **Spotter:** {spotter}\n"
                    f"💬 **Comment:** {comment}\n",
         "username": "HamBOT 🐷"
