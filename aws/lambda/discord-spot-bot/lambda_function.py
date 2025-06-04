@@ -21,26 +21,7 @@ def lambda_handler(event, context):
     comment = payload.get("comment", "N/A")
 
     # Determine which webhook URL to use
-    if source == "sotawatch":
-        webhook_url = os.environ.get('webhook_sota')
-    elif source == "pota":
-        webhook_url = os.environ.get('webhook_pota')
-    elif mode == "cw":
-        webhook_url = os.environ.get('webhook_cw_club')
-    else:
-        print(f"Ignoring notification with source: {source}")
-        return {
-            "statusCode": 200,
-            "body": json.dumps({"message": f"Notification ignored. Source '{source}' is not SOTA or POTA."})
-        }
-
-    # Safety check for webhook URL
-    if not webhook_url:
-        print(f"No webhook URL configured for source: {source}")
-        return {
-            "statusCode": 500,
-            "body": json.dumps({"error": f"No webhook URL configured for source '{source}'."})
-        }
+    webhook_url = os.environ.get('webhook_spots')
 
     # Format Discord message
     discord_message = {
