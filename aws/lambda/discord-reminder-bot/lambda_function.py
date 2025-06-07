@@ -6,12 +6,11 @@ from zoneinfo import ZoneInfo  # Python 3.9+
 
 def cw_random_string():
     strings = [
-        "Hey silly-face, did you get your 15 minutes of CW practice in today?",
         "Hey lazy-ass, did you get your 15 minutes of CW practice in today?",
-        "PRACTICE CW FOR 15 MINUTES, AT LEAST!",
         "Practice CW or die.",
         "NO LINE DANCING, ONLY CW PRACTICE!!",
         "Did you get your 15 minutes of CW practice in today?",
+        "NO PINK EYE, ONLY CW PRACTICE.",
         "Not decoding 20 WPM yet, eh? Did you practice today? Mmm-hmm...",
         "You can decrease the number of people you will disappoint with your CW by practicing more. Did you practice today?",
     ]
