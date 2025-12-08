@@ -34,7 +34,7 @@ SCHEDULES = [
         "days_of_week": [6],
         "week_of_month": [1, 3],
         "hour": 21,
-        "message": "@everyone 🚨 **EVSRT Starting NOW!**\nBe there, and be square: 146.450 MHz, FM, no PL. Log Sheet: https://bit.ly/4d6fDA8",
+        "message": "@everyone 🚨 **EVSRT Starting NOW!**\nBe there, and be square: 146.450 MHz, FM, no PL. Log Sheet: https://docs.google.com/spreadsheets/d/1PBsWHHV3D8bmO1gaDfxEkkpriymMZxA0sGjpjUOCcxI/edit?gid=0#gid=0",
         "channel": "evsrt",
     },
     {
