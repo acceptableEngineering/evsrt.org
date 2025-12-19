@@ -736,9 +736,9 @@ Data sources:
 
 {format_solar_text(solar_data)}
 
-{format_contests_text(contests)}
-
 {format_weather_text(weather_by_zip.get(zip_code), zip_code)}
+
+{format_contests_text(contests)}
 
 Data sources:
 - Solar: https://www.hamqsl.com/solar.html
@@ -761,14 +761,14 @@ Data sources:
                 <p><em>{today}</em></p>
                 
                 {format_solar_html(solar_data)}
+
+                <hr style="margin: 30px 0;">
+                
+                {format_weather_html(weather_by_zip.get(zip_code), zip_code)}
                 
                 <hr style="margin: 30px 0;">
                 
                 {format_contests_html(contests)}
-                
-                <hr style="margin: 30px 0;">
-                
-                {format_weather_html(weather_by_zip.get(zip_code), zip_code)}
                 
                 <hr style="margin: 30px 0;">
                 
