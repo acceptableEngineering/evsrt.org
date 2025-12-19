@@ -309,48 +309,64 @@ def format_contests_html(contests):
 
 def send_email(subject, content, from_email, to_emails, sendgrid_api_key, reply_to=None):
     """Send email via SendGrid (supports both plain text and HTML)
-
+    
     Args:
-        to_emails: Can be a single email string or comma-separated list of emails
+        content: Either a string (content) or dict with 'text' and 'html' keys
+        to_emails: Can be a list of dicts with 'email' and 'type' keys, or a legacy string
         reply_to: Optional reply-to email address
     """
     if not SENDGRID_AVAILABLE:
         print("Error: sendgrid module not available. Install with: pip install sendgrid")
         return False
-
+    
     try:
-        # Parse multiple email addresses
+        # Parse email list - can be list of dicts or legacy comma-separated string
         if isinstance(to_emails, str):
-            # Split by comma and strip whitespace
-            email_list = [email.strip() for email in to_emails.split(',')]
+            # Legacy format: comma-separated emails, assume HTML
+            email_list = [
+                {"email": email.strip(), "type": "html"}
+                for email in to_emails.split(',')
+            ]
         else:
+            # Already a list of dicts
             email_list = to_emails
-        
-        # Detect if content is HTML or plain text
-        is_html = content.strip().startswith('<')
-        content_type = "text/html" if is_html else "text/plain"
         
         sg = SendGridAPIClient(sendgrid_api_key)
         total_recipients = len(email_list)
-
+        
         # Send to each recipient individually
-        for recipient_email in email_list:
+        for recipient in email_list:
+            recipient_email = recipient["email"]
+            recipient_type = recipient.get("type", "html").lower()
+            
+            # Get the appropriate content based on recipient type
+            if isinstance(content, dict):
+                if recipient_type == "plain":
+                    content_body = content.get('text', '')
+                else:
+                    content_body = content.get('html', '')
+            else:
+                content_body = content
+            
+            # Determine if HTML or plain text
+            is_html = recipient_type == "html"
+            
             message = Mail(
                 from_email=Email(from_email),
                 to_emails=To(recipient_email),
                 subject=subject,
-                plain_text_content=Content("text/plain", content) if not is_html else None,
-                html_content=Content("text/html", content) if is_html else None
+                plain_text_content=Content("text/plain", content_body) if not is_html else None,
+                html_content=Content("text/html", content_body) if is_html else None
             )
-
+            
             # Add reply-to if provided
             if reply_to:
                 message.reply_to = Email(reply_to)
-
+            
             response = sg.send(message)
-            print(f"Email sent to {recipient_email} - Status code: {response.status_code}")
-
-        print(f"All emails sent! (format: {content_type}, total recipients: {total_recipients})")
+            print(f"Email sent to {recipient_email} ({recipient_type}) - Status code: {response.status_code}")
+        
+        print(f"All emails sent! (total recipients: {total_recipients})")
         return True
     except Exception as e:
         print(f"Error sending email: {e}")
@@ -363,19 +379,41 @@ def lambda_handler(event, context):
     Environment Variables:
         SENDGRID_API_KEY: SendGrid API key
         FROM_EMAIL: Sender email address
-        TO_EMAIL: Recipient email(s) - single or comma-separated list
-                  Example: "call1@winlink.org" or "call1@winlink.org, call2@example.com, call3@gmail.com"
-                  Multiple recipients will be sent as BCC (won't see each other)
-        PLAIN_TEXT: Set to 'true' for plain text format (for Winlink), default is HTML
+        EMAIL_LIST: JSON array of recipient objects with 'email' and 'type' keys
+                    Example: '[{"email":"call1@winlink.org","type":"plain"},{"email":"call2@example.com","type":"html"}]'
+                    Or use legacy TO_EMAIL if EMAIL_LIST not set
+        TO_EMAIL: Legacy recipient email(s) - single or comma-separated list (used if EMAIL_LIST not set)
+                  Example: "call1@winlink.org" or "call1@winlink.org, call2@example.com"
+        REPLY_TO: Optional reply-to email address
+        PLAIN_TEXT: Set to 'true' for plain text format (for legacy TO_EMAIL), default is HTML
         OUTPUT_FILE: Optional - write to file instead of sending email
     """
     
     # Get configuration from environment variables
     SENDGRID_API_KEY = os.environ.get('SENDGRID_API_KEY')
     FROM_EMAIL = os.environ.get('FROM_EMAIL')
-    TO_EMAIL = os.environ.get('TO_EMAIL')
+    REPLY_TO = os.environ.get('REPLY_TO')  # Optional: reply-to email address
     OUTPUT_FILE = os.environ.get('OUTPUT_FILE')  # Optional: write to file instead of sending email
-    PLAIN_TEXT = os.environ.get('PLAIN_TEXT', 'false').lower() == 'true'  # Use plain text format
+    
+    # Try to get EMAIL_LIST first (new format), fall back to TO_EMAIL (legacy format)
+    EMAIL_LIST_JSON = os.environ.get('EMAIL_LIST')
+    if EMAIL_LIST_JSON:
+        try:
+            TO_EMAIL = json.loads(EMAIL_LIST_JSON)
+        except json.JSONDecodeError:
+            print(f"Error parsing EMAIL_LIST JSON: {EMAIL_LIST_JSON}")
+            return {
+                'statusCode': 500,
+                'body': json.dumps('Invalid EMAIL_LIST JSON format')
+            }
+    else:
+        TO_EMAIL = os.environ.get('TO_EMAIL')  # Fall back to legacy comma-separated
+        PLAIN_TEXT = os.environ.get('PLAIN_TEXT', 'false').lower() == 'true'
+        # Convert legacy format to new format if PLAIN_TEXT is set
+        if TO_EMAIL and PLAIN_TEXT:
+            TO_EMAIL = [{"email": email.strip(), "type": "plain"} for email in TO_EMAIL.split(',')]
+        elif TO_EMAIL:
+            TO_EMAIL = [{"email": email.strip(), "type": "html"} for email in TO_EMAIL.split(',')]
     
     # Fetch data
     print("Fetching solar data...")
@@ -433,20 +471,16 @@ Data sources:
     </html>
     """
     
-    # Determine which format to use
-    content_to_send = text_body if PLAIN_TEXT else html_body
-    content_type = "text/plain" if PLAIN_TEXT else "text/html"
-    
     # If OUTPUT_FILE is set, write to file instead of sending email
     if OUTPUT_FILE:
         print(f"Writing output to file: {OUTPUT_FILE}")
         try:
             with open(OUTPUT_FILE, 'w', encoding='utf-8') as f:
-                f.write(content_to_send)
-            print(f"✅ {'Text' if PLAIN_TEXT else 'HTML'} written to {OUTPUT_FILE}")
+                f.write(html_body)
+            print(f"✅ HTML written to {OUTPUT_FILE}")
             return {
                 'statusCode': 200,
-                'body': json.dumps(f'{"Text" if PLAIN_TEXT else "HTML"} written to {OUTPUT_FILE}')
+                'body': json.dumps(f'HTML written to {OUTPUT_FILE}')
             }
         except Exception as e:
             print(f"Error writing file: {e}")
@@ -462,8 +496,14 @@ Data sources:
             'body': json.dumps('Missing required environment variables for email sending')
         }
     
-    print(f"Sending email ({'plain text' if PLAIN_TEXT else 'HTML'} format)...")
-    success = send_email(subject, content_to_send, FROM_EMAIL, TO_EMAIL, SENDGRID_API_KEY, reply_to=FROM_EMAIL)
+    # Create content object that has both versions
+    content_obj = {
+        'text': text_body,
+        'html': html_body
+    }
+    
+    print(f"Sending emails...")
+    success = send_email(subject, content_obj, FROM_EMAIL, TO_EMAIL, SENDGRID_API_KEY, reply_to=REPLY_TO)
     
     if success:
         return {
