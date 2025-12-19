@@ -307,16 +307,17 @@ def format_contests_html(contests):
     return html
 
 
-def send_email(subject, content, from_email, to_emails, sendgrid_api_key):
+def send_email(subject, content, from_email, to_emails, sendgrid_api_key, reply_to=None):
     """Send email via SendGrid (supports both plain text and HTML)
-    
+
     Args:
         to_emails: Can be a single email string or comma-separated list of emails
+        reply_to: Optional reply-to email address
     """
     if not SENDGRID_AVAILABLE:
         print("Error: sendgrid module not available. Install with: pip install sendgrid")
         return False
-    
+
     try:
         # Parse multiple email addresses
         if isinstance(to_emails, str):
@@ -329,30 +330,27 @@ def send_email(subject, content, from_email, to_emails, sendgrid_api_key):
         is_html = content.strip().startswith('<')
         content_type = "text/html" if is_html else "text/plain"
         
-        # Use first email as primary recipient, rest as BCC
-        primary_email = email_list[0]
-        bcc_emails = email_list[1:] if len(email_list) > 1 else []
-        
-        message = Mail(
-            from_email=Email(from_email),
-            to_emails=To(primary_email),
-            subject=subject,
-            plain_text_content=Content("text/plain", content) if not is_html else None,
-            html_content=Content("text/html", content) if is_html else None
-        )
-        
-        # Add BCC recipients
-        for bcc_email in bcc_emails:
-            message.add_bcc(bcc_email)
-        
         sg = SendGridAPIClient(sendgrid_api_key)
-        response = sg.send(message)
-        
         total_recipients = len(email_list)
-        print(f"Email sent! Status code: {response.status_code} (format: {content_type}, recipients: {total_recipients})")
-        if bcc_emails:
-            print(f"  Primary: {primary_email}")
-            print(f"  BCC: {', '.join(bcc_emails)}")
+
+        # Send to each recipient individually
+        for recipient_email in email_list:
+            message = Mail(
+                from_email=Email(from_email),
+                to_emails=To(recipient_email),
+                subject=subject,
+                plain_text_content=Content("text/plain", content) if not is_html else None,
+                html_content=Content("text/html", content) if is_html else None
+            )
+
+            # Add reply-to if provided
+            if reply_to:
+                message.reply_to = Email(reply_to)
+
+            response = sg.send(message)
+            print(f"Email sent to {recipient_email} - Status code: {response.status_code}")
+
+        print(f"All emails sent! (format: {content_type}, total recipients: {total_recipients})")
         return True
     except Exception as e:
         print(f"Error sending email: {e}")
