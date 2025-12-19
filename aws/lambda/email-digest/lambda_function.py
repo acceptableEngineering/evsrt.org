@@ -463,7 +463,7 @@ Data sources:
         }
     
     print(f"Sending email ({'plain text' if PLAIN_TEXT else 'HTML'} format)...")
-    success = send_email(subject, content_to_send, FROM_EMAIL, TO_EMAIL, SENDGRID_API_KEY)
+    success = send_email(subject, content_to_send, FROM_EMAIL, TO_EMAIL, SENDGRID_API_KEY, reply_to=FROM_EMAIL)
     
     if success:
         return {
