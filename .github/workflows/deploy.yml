@@ -73,6 +73,7 @@ jobs:
     - name: Build Lambda email-digest
       run: |
         cd ./aws/lambda/email-digest/
+        rm -rf package lambda.zip
         python -m pip install --upgrade pip
         mkdir -p package
         pip install -r requirements.txt -t package/
