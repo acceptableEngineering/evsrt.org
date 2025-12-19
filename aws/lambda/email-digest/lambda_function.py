@@ -139,7 +139,7 @@ def format_solar_text(solar_data):
     text = "=" * 60 + "\n"
     text += "SOLAR PROPAGATION CONDITIONS\n"
     text += "=" * 60 + "\n"
-    text += f"Updated: {solar_data['updated']}\n\n"
+    text += f"Updated: {solar_data['updated'].replace(' GMT', ' UTC')}\n\n"
     
     text += f"Solar Flux:      {solar_data['solarflux']:>6}\n"
     text += f"Sunspots:        {solar_data['sunspots']:>6}\n"
@@ -198,7 +198,7 @@ def format_solar_html(solar_data):
     
     html = f"""
     <h2>📡 Solar Propagation Conditions</h2>
-    <p><strong>Updated:</strong> {solar_data['updated']}</p>
+    <p><strong>Updated:</strong> {solar_data['updated'].replace(' GMT', ' UTC')}</p>
     
     <table style="border-collapse: collapse; margin: 10px 0;">
         <tr>
