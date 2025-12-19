@@ -68,3 +68,20 @@ jobs:
         aws lambda update-function-code \
           --function-name EVSRT-HamAlert \
           --zip-file fileb://lambda.zip
+
+
+    - name: Build Lambda email-digest
+      run: |
+        cd ./aws/lambda/email-digest/
+        python -m pip install --upgrade pip
+        mkdir -p package
+        pip install -r requirements.txt -t package/
+        cp lambda_function.py package/
+        cd package && zip -r ../lambda.zip . && cd ..
+
+    - name: Upload Lambda email-digest
+      run: |
+        cd ./aws/lambda/email-digest/
+        aws lambda update-function-code \
+          --function-name HamPals-Email-Digest \
+          --zip-file fileb://lambda.zip
