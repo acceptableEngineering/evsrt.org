@@ -5,6 +5,8 @@ from datetime import datetime, timedelta
 import xml.etree.ElementTree as ET
 import urllib.request
 import urllib.error
+from geopy.geocoders import Nominatim
+from geopy.exc import GeocoderTimedOut
 
 # Debug: Print Python path and check for sendgrid
 print(f"Python version: {sys.version}")
@@ -131,6 +133,120 @@ def filter_contests_for_next_week(contests, days=7):
     return filtered
 
 
+def zip_to_coords(zip_code):
+    """Convert US ZIP code to latitude/longitude coordinates
+    
+    Args:
+        zip_code: US ZIP code string
+        
+    Returns:
+        Tuple of (lat, lon) or None if lookup fails
+    """
+    try:
+        geocoder = Nominatim(user_agent="ham_radio_digest")
+        location = geocoder.geocode(f"{zip_code}, USA", timeout=5)
+        
+        if location:
+            print(f"✓ ZIP {zip_code} -> ({location.latitude}, {location.longitude})")
+            return (location.latitude, location.longitude)
+        else:
+            print(f"✗ Could not geocode ZIP {zip_code}")
+            return None
+    except GeocoderTimedOut:
+        print(f"✗ Geocoding timeout for ZIP {zip_code}")
+        return None
+    except Exception as e:
+        print(f"✗ Error geocoding ZIP {zip_code}: {e}")
+        return None
+
+
+def fetch_weather_forecast(latitude, longitude):
+    """Fetch 7-day weather forecast from Open-Meteo API (free, no auth required)
+    
+    Args:
+        latitude: Location latitude
+        longitude: Location longitude
+        
+    Returns:
+        Dict with daily forecast data or None on failure
+    """
+    url = f"https://api.open-meteo.com/v1/forecast?latitude={latitude}&longitude={longitude}&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,weather_code&temperature_unit=fahrenheit&timezone=auto"
+    
+    try:
+        with urllib.request.urlopen(url, timeout=10) as response:
+            data = json.loads(response.read().decode('utf-8'))
+        
+        if 'daily' not in data:
+            print(f"No daily forecast data in response")
+            return None
+        
+        daily = data['daily']
+        forecast = {
+            'timezone': data.get('timezone', 'Unknown'),
+            'days': []
+        }
+        
+        # Parse each day's forecast
+        for i in range(min(7, len(daily['time']))):
+            day_date = daily['time'][i]
+            high_temp = daily['temperature_2m_max'][i]
+            low_temp = daily['temperature_2m_min'][i]
+            weather_code = daily['weather_code'][i]
+            precipitation = daily.get('precipitation_sum', [0] * 7)[i]
+            
+            # Convert WMO weather codes to human-readable descriptions
+            weather_desc = wmo_code_to_description(weather_code)
+            
+            forecast['days'].append({
+                'date': day_date,
+                'high': high_temp,
+                'low': low_temp,
+                'condition': weather_desc,
+                'precipitation': precipitation
+            })
+        
+        return forecast
+    except Exception as e:
+        print(f"Error fetching weather forecast: {e}")
+        return None
+
+
+def wmo_code_to_description(code):
+    """Convert WMO weather code to human-readable description
+    
+    WMO Weather interpretation codes:
+    0 = Clear sky
+    1, 2 = Mostly clear
+    3 = Overcast
+    45, 48 = Foggy
+    51-67 = Drizzle/Rain
+    71-77 = Snow
+    80-82 = Rain showers
+    85-86 = Snow showers
+    80-99 = Thunderstorm
+    """
+    if code == 0:
+        return "Clear"
+    elif code in [1, 2]:
+        return "Mostly Clear"
+    elif code == 3:
+        return "Overcast"
+    elif code in [45, 48]:
+        return "Foggy"
+    elif code in range(51, 68):  # Drizzle and rain
+        return "Rain"
+    elif code in range(71, 78):  # Snow
+        return "Snow"
+    elif code in [80, 81, 82]:  # Rain showers
+        return "Showers"
+    elif code in [85, 86]:  # Snow showers
+        return "Snow Showers"
+    elif code in range(80, 100):  # Thunderstorm
+        return "Thunderstorm"
+    else:
+        return "Unknown"
+
+
 def format_solar_text(solar_data):
     """Format solar data as plain text"""
     if not solar_data:
@@ -188,6 +304,29 @@ def format_contests_text(contests):
         text += f"  Time: {contest['time']}\n"
         text += f"  Info: {contest['link']}\n\n"
     
+    return text
+
+
+def format_weather_text(forecast, zip_code):
+    """Format weather forecast as plain text"""
+    if not forecast:
+        return f"Weather data unavailable for ZIP {zip_code}\n"
+    
+    text = "=" * 60 + "\n"
+    text += f"WEATHER FORECAST - {zip_code}\n"
+    text += "=" * 60 + "\n"
+    text += f"Timezone: {forecast['timezone']}\n\n"
+    text += f"{'Date':<12} {'High':<8} {'Low':<8} {'Condition':<15}\n"
+    text += "-" * 60 + "\n"
+    
+    for day in forecast['days']:
+        date_str = datetime.strptime(day['date'], '%Y-%m-%d').strftime('%a %m/%d')
+        high = f"{day['high']:.0f}°F"
+        low = f"{day['low']:.0f}°F"
+        condition = day['condition']
+        text += f"{date_str:<12} {high:<8} {low:<8} {condition:<15}\n"
+    
+    text += "\n"
     return text
 
 
@@ -307,6 +446,62 @@ def format_contests_html(contests):
     return html
 
 
+def format_weather_html(forecast, zip_code):
+    """Format weather forecast as HTML"""
+    if not forecast:
+        return f"<p>Weather data unavailable for ZIP {zip_code}</p>"
+    
+    html = f"""
+    <h2>🌤️ 7-Day Weather Forecast</h2>
+    <p><strong>Location:</strong> ZIP {zip_code} ({forecast['timezone']})</p>
+    
+    <table style="border-collapse: collapse; width: 100%; margin: 10px 0;">
+        <thead>
+            <tr style="background-color: #f0f0f0;">
+                <th style="padding: 8px; text-align: left; border: 1px solid #ddd;">Date</th>
+                <th style="padding: 8px; text-align: center; border: 1px solid #ddd;">High</th>
+                <th style="padding: 8px; text-align: center; border: 1px solid #ddd;">Low</th>
+                <th style="padding: 8px; text-align: left; border: 1px solid #ddd;">Condition</th>
+            </tr>
+        </thead>
+        <tbody>
+    """
+    
+    for day in forecast['days']:
+        date_obj = datetime.strptime(day['date'], '%Y-%m-%d')
+        date_str = date_obj.strftime('%a, %b %d')
+        high = f"{day['high']:.0f}°F"
+        low = f"{day['low']:.0f}°F"
+        condition = day['condition']
+        
+        # Color code conditions
+        condition_color = {
+            'Clear': '#87CEEB',
+            'Mostly Clear': '#B0E0E6',
+            'Overcast': '#D3D3D3',
+            'Rain': '#4169E1',
+            'Showers': '#6495ED',
+            'Snow': '#F0F8FF',
+            'Thunderstorm': '#191970'
+        }.get(condition, '#FFFFFF')
+        
+        html += f"""
+            <tr>
+                <td style="padding: 8px; border: 1px solid #ddd;">{date_str}</td>
+                <td style="padding: 8px; text-align: center; border: 1px solid #ddd; font-weight: bold;">{high}</td>
+                <td style="padding: 8px; text-align: center; border: 1px solid #ddd;">{low}</td>
+                <td style="padding: 8px; border: 1px solid #ddd; background-color: {condition_color}; color: {'white' if condition == 'Thunderstorm' else 'black'};">{condition}</td>
+            </tr>
+        """
+    
+    html += """
+        </tbody>
+    </table>
+    """
+    
+    return html
+
+
 def send_email(subject, content, from_email, to_emails, sendgrid_api_key, reply_to=None):
     """Send email via SendGrid (supports both plain text and HTML)
     
@@ -379,13 +574,10 @@ def lambda_handler(event, context):
     Environment Variables:
         SENDGRID_API_KEY: SendGrid API key
         FROM_EMAIL: Sender email address
-        EMAIL_LIST: JSON array of recipient objects with 'email' and 'type' keys
-                    Example: '[{"email":"call1@winlink.org","type":"plain"},{"email":"call2@example.com","type":"html"}]'
-                    Or use legacy TO_EMAIL if EMAIL_LIST not set
-        TO_EMAIL: Legacy recipient email(s) - single or comma-separated list (used if EMAIL_LIST not set)
-                  Example: "call1@winlink.org" or "call1@winlink.org, call2@example.com"
+        EMAIL_LIST: JSON array of recipient objects with 'email', 'type', and 'zip' keys
+                    Example: '[{"email":"call1@winlink.org","type":"plain","zip":"90210"},
+                              {"email":"call2@example.com","type":"html","zip":"10001"}]'
         REPLY_TO: Optional reply-to email address
-        PLAIN_TEXT: Set to 'true' for plain text format (for legacy TO_EMAIL), default is HTML
         OUTPUT_FILE: Optional - write to file instead of sending email
     """
     
@@ -395,27 +587,34 @@ def lambda_handler(event, context):
     REPLY_TO = os.environ.get('REPLY_TO')  # Optional: reply-to email address
     OUTPUT_FILE = os.environ.get('OUTPUT_FILE')  # Optional: write to file instead of sending email
     
-    # Try to get EMAIL_LIST first (new format), fall back to TO_EMAIL (legacy format)
+    # Get EMAIL_LIST (new format with ZIP codes)
     EMAIL_LIST_JSON = os.environ.get('EMAIL_LIST')
-    if EMAIL_LIST_JSON:
-        try:
-            TO_EMAIL = json.loads(EMAIL_LIST_JSON)
-        except json.JSONDecodeError:
-            print(f"Error parsing EMAIL_LIST JSON: {EMAIL_LIST_JSON}")
+    if not EMAIL_LIST_JSON:
+        print("Error: EMAIL_LIST environment variable is required")
+        return {
+            'statusCode': 500,
+            'body': json.dumps('Missing EMAIL_LIST environment variable')
+        }
+    
+    try:
+        email_list = json.loads(EMAIL_LIST_JSON)
+    except json.JSONDecodeError:
+        print(f"Error parsing EMAIL_LIST JSON: {EMAIL_LIST_JSON}")
+        return {
+            'statusCode': 500,
+            'body': json.dumps('Invalid EMAIL_LIST JSON format')
+        }
+    
+    # Validate that email_list contains objects with 'email' and 'zip' keys
+    for item in email_list:
+        if 'email' not in item or 'zip' not in item:
+            print("Error: EMAIL_LIST items must have 'email' and 'zip' keys")
             return {
                 'statusCode': 500,
-                'body': json.dumps('Invalid EMAIL_LIST JSON format')
+                'body': json.dumps('EMAIL_LIST items must have email and zip keys')
             }
-    else:
-        TO_EMAIL = os.environ.get('TO_EMAIL')  # Fall back to legacy comma-separated
-        PLAIN_TEXT = os.environ.get('PLAIN_TEXT', 'false').lower() == 'true'
-        # Convert legacy format to new format if PLAIN_TEXT is set
-        if TO_EMAIL and PLAIN_TEXT:
-            TO_EMAIL = [{"email": email.strip(), "type": "plain"} for email in TO_EMAIL.split(',')]
-        elif TO_EMAIL:
-            TO_EMAIL = [{"email": email.strip(), "type": "html"} for email in TO_EMAIL.split(',')]
     
-    # Fetch data
+    # Fetch global data (solar and contests)
     print("Fetching solar data...")
     solar_data = fetch_solar_data()
     
@@ -423,64 +622,92 @@ def lambda_handler(event, context):
     all_contests = fetch_contest_data()
     contests = filter_contests_for_next_week(all_contests, days=7)
     
-    # Format email
+    # Fetch weather data for each recipient
+    print("Fetching weather forecasts...")
+    weather_by_zip = {}
+    for recipient in email_list:
+        zip_code = recipient['zip']
+        
+        if zip_code not in weather_by_zip:
+            # Convert ZIP to coordinates
+            coords = zip_to_coords(zip_code)
+            if coords:
+                # Fetch weather forecast
+                forecast = fetch_weather_forecast(coords[0], coords[1])
+                weather_by_zip[zip_code] = forecast
+            else:
+                weather_by_zip[zip_code] = None
+    
+    # Format email for each recipient
     today = datetime.utcnow().strftime("%B %d, %Y")
     subject = f"Ham Radio Daily Digest - {today}"
     
-    # Generate both text and HTML versions
-    text_body = f"""HAM RADIO DAILY DIGEST
+    # Send to each recipient with their personalized weather
+    if OUTPUT_FILE:
+        # For file output, use the first recipient's weather data
+        first_zip = email_list[0]['zip']
+        recipient_type = email_list[0].get('type', 'html').lower()
+        
+        print(f"Writing output to file: {OUTPUT_FILE} (using ZIP {first_zip})")
+        
+        text_body = f"""HAM RADIO DAILY DIGEST
 {today}
 
 {format_solar_text(solar_data)}
 
 {format_contests_text(contests)}
 
+{format_weather_text(weather_by_zip.get(first_zip), first_zip)}
+
 Data sources:
 - Solar: https://www.hamqsl.com/solar.html
 - Contests: https://www.contestcalendar.com
+- Weather: https://open-meteo.com
 """
-    
-    html_body = f"""
-    <html>
-        <head>
-            <style>
-                body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; }}
-                h2 {{ color: #2c5aa0; border-bottom: 2px solid #2c5aa0; padding-bottom: 5px; }}
-                h3 {{ color: #4a7ba7; }}
-                table {{ margin: 15px 0; }}
-            </style>
-        </head>
-        <body>
-            <h1>📻 Ham Radio Daily Digest</h1>
-            <p><em>{today}</em></p>
-            
-            {format_solar_html(solar_data)}
-            
-            <hr style="margin: 30px 0;">
-            
-            {format_contests_html(contests)}
-            
-            <hr style="margin: 30px 0;">
-            
-            <p style="font-size: 12px; color: #666;">
-                Data sources: 
-                <a href="https://www.hamqsl.com/solar.html">HAMQSL.com</a> | 
-                <a href="https://www.contestcalendar.com">WA7BNM Contest Calendar</a>
-            </p>
-        </body>
-    </html>
-    """
-    
-    # If OUTPUT_FILE is set, write to file instead of sending email
-    if OUTPUT_FILE:
-        print(f"Writing output to file: {OUTPUT_FILE}")
+        
+        html_body = f"""
+        <html>
+            <head>
+                <style>
+                    body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; }}
+                    h2 {{ color: #2c5aa0; border-bottom: 2px solid #2c5aa0; padding-bottom: 5px; }}
+                    h3 {{ color: #4a7ba7; }}
+                    table {{ margin: 15px 0; }}
+                </style>
+            </head>
+            <body>
+                <h1>📻 Ham Radio Daily Digest</h1>
+                <p><em>{today}</em></p>
+                
+                {format_solar_html(solar_data)}
+
+                <hr style="margin: 30px 0;">
+                
+                {format_weather_html(weather_by_zip.get(first_zip), first_zip)}
+                
+                <hr style="margin: 30px 0;">
+                
+                {format_contests_html(contests)}
+                
+                <hr style="margin: 30px 0;">
+                
+                <p style="font-size: 12px; color: #666;">
+                    Data sources: 
+                    <a href="https://www.hamqsl.com/solar.html">HAMQSL.com</a> | 
+                    <a href="https://www.contestcalendar.com">WA7BNM Contest Calendar</a> |
+                    <a href="https://open-meteo.com">Open-Meteo</a>
+                </p>
+            </body>
+        </html>
+        """
+        
         try:
             with open(OUTPUT_FILE, 'w', encoding='utf-8') as f:
-                f.write(html_body)
-            print(f"✅ HTML written to {OUTPUT_FILE}")
+                f.write(html_body if recipient_type == 'html' else text_body)
+            print(f"✅ Output written to {OUTPUT_FILE}")
             return {
                 'statusCode': 200,
-                'body': json.dumps(f'HTML written to {OUTPUT_FILE}')
+                'body': json.dumps(f'Output written to {OUTPUT_FILE}')
             }
         except Exception as e:
             print(f"Error writing file: {e}")
@@ -489,40 +716,120 @@ Data sources:
                 'body': json.dumps(f'Failed to write file: {str(e)}')
             }
     
-    # Otherwise, send email
-    if not all([SENDGRID_API_KEY, FROM_EMAIL, TO_EMAIL]):
+    # Send emails to each recipient
+    if not all([SENDGRID_API_KEY, FROM_EMAIL]):
         return {
             'statusCode': 500,
             'body': json.dumps('Missing required environment variables for email sending')
         }
     
-    # Create content object that has both versions
-    content_obj = {
-        'text': text_body,
-        'html': html_body
+    print(f"Sending emails to {len(email_list)} recipients...")
+    
+    for recipient in email_list:
+        recipient_email = recipient['email']
+        recipient_type = recipient.get('type', 'html').lower()
+        zip_code = recipient['zip']
+        
+        # Generate content with recipient's weather
+        text_body = f"""HAM RADIO DAILY DIGEST
+{today}
+
+{format_solar_text(solar_data)}
+
+{format_contests_text(contests)}
+
+{format_weather_text(weather_by_zip.get(zip_code), zip_code)}
+
+Data sources:
+- Solar: https://www.hamqsl.com/solar.html
+- Contests: https://www.contestcalendar.com
+- Weather: https://open-meteo.com
+"""
+        
+        html_body = f"""
+        <html>
+            <head>
+                <style>
+                    body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; }}
+                    h2 {{ color: #2c5aa0; border-bottom: 2px solid #2c5aa0; padding-bottom: 5px; }}
+                    h3 {{ color: #4a7ba7; }}
+                    table {{ margin: 15px 0; }}
+                </style>
+            </head>
+            <body>
+                <h1>📻 Ham Radio Daily Digest</h1>
+                <p><em>{today}</em></p>
+                
+                {format_solar_html(solar_data)}
+                
+                <hr style="margin: 30px 0;">
+                
+                {format_contests_html(contests)}
+                
+                <hr style="margin: 30px 0;">
+                
+                {format_weather_html(weather_by_zip.get(zip_code), zip_code)}
+                
+                <hr style="margin: 30px 0;">
+                
+                <p style="font-size: 12px; color: #666;">
+                    Data sources: 
+                    <a href="https://www.hamqsl.com/solar.html">HAMQSL.com</a> | 
+                    <a href="https://www.contestcalendar.com">WA7BNM Contest Calendar</a> |
+                    <a href="https://open-meteo.com">Open-Meteo</a>
+                </p>
+            </body>
+        </html>
+        """
+        
+        # Create content object
+        content_obj = {
+            'text': text_body,
+            'html': html_body
+        }
+        
+        # Determine content type for this recipient
+        if recipient_type == 'plain':
+            send_body = text_body
+        else:
+            send_body = html_body
+        
+        try:
+            from sendgrid.helpers.mail import Mail, Email, To, Content
+            
+            sg = SendGridAPIClient(SENDGRID_API_KEY)
+            
+            message = Mail(
+                from_email=Email(FROM_EMAIL),
+                to_emails=To(recipient_email),
+                subject=subject,
+                plain_text_content=Content("text/plain", text_body) if recipient_type == 'plain' else None,
+                html_content=Content("text/html", html_body) if recipient_type == 'html' else None
+            )
+            
+            if REPLY_TO:
+                message.reply_to = Email(REPLY_TO)
+            
+            response = sg.send(message)
+            print(f"✓ Email sent to {recipient_email} ({recipient_type}, ZIP {zip_code}) - Status: {response.status_code}")
+        
+        except Exception as e:
+            print(f"✗ Error sending email to {recipient_email}: {e}")
+    
+    return {
+        'statusCode': 200,
+        'body': json.dumps(f'Emails sent to {len(email_list)} recipients')
     }
-    
-    print(f"Sending emails...")
-    success = send_email(subject, content_obj, FROM_EMAIL, TO_EMAIL, SENDGRID_API_KEY, reply_to=REPLY_TO)
-    
-    if success:
-        return {
-            'statusCode': 200,
-            'body': json.dumps('Email sent successfully!')
-        }
-    else:
-        return {
-            'statusCode': 500,
-            'body': json.dumps('Failed to send email')
-        }
 
 
 # For local testing
 if __name__ == "__main__":
     # Set test environment variables
-    # For file output (testing without SendGrid):
     # os.environ['OUTPUT_FILE'] = 'ham_radio_digest_output.html'
-    
+    # os.environ['EMAIL_LIST'] = json.dumps([
+    #     {"email": "nobody@email.com", "type": "html", "zip": "91234"}
+    # ])
+
     # Run the handler
     result = lambda_handler({}, {})
     print(result)

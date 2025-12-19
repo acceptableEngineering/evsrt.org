@@ -1,1 +1,2 @@
 *.DS_Store
+aws/lambda/email-digest/ham_radio_digest_output.html
