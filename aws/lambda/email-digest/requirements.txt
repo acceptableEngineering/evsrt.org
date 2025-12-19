@@ -1,7 +1,7 @@
 cffi==2.0.0
-cryptography==46.0.3
+cryptography==42.0.7
 MarkupSafe==3.0.3
 pycparser==2.23
 python-http-client==3.3.7
-sendgrid==6.12.5
+sendgrid==6.11.0
 Werkzeug==3.1.4
