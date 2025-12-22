@@ -302,7 +302,6 @@ def format_contests_text(contests):
     for contest in contests:
         text += f"{contest['title']}\n"
         text += f"  Time: {contest['time']}\n"
-        text += f"  Info: {contest['link']}\n\n"
 
     return text
 
