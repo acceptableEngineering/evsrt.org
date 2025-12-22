@@ -502,70 +502,48 @@ def format_weather_html(forecast, zip_code):
     return html
 
 
-def send_email(subject, content, from_email, to_emails, sendgrid_api_key, reply_to=None):
-    """Send email via SendGrid (supports both plain text and HTML)
-
-    Args:
-        content: Either a string (content) or dict with 'text' and 'html' keys
-        to_emails: Can be a list of dicts with 'email' and 'type' keys, or a legacy string
-        reply_to: Optional reply-to email address
-    """
-    if not SENDGRID_AVAILABLE:
-        print("Error: sendgrid module not available. Install with: pip install sendgrid")
-        return False
-
+def fetch_sendgrid_list(api_key, list_id):
+    """Fetch all contacts from a SendGrid list"""
     try:
-        # Parse email list - can be list of dicts or legacy comma-separated string
-        if isinstance(to_emails, str):
-            # Legacy format: comma-separated emails, assume HTML
-            email_list = [
-                {"email": email.strip(), "type": "html"}
-                for email in to_emails.split(',')
-            ]
-        else:
-            # Already a list of dicts
-            email_list = to_emails
-
-        sg = SendGridAPIClient(sendgrid_api_key)
-        total_recipients = len(email_list)
-
-        # Send to each recipient individually
-        for recipient in email_list:
-            recipient_email = recipient["email"]
-            recipient_type = recipient.get("type", "html").lower()
-
-            # Get the appropriate content based on recipient type
-            if isinstance(content, dict):
-                if recipient_type == "plain":
-                    content_body = content.get('text', '')
-                else:
-                    content_body = content.get('html', '')
-            else:
-                content_body = content
-
-            # Determine if HTML or plain text
-            is_html = recipient_type == "html"
-
-            message = Mail(
-                from_email=Email(from_email),
-                to_emails=To(recipient_email),
-                subject=subject,
-                plain_text_content=Content("text/plain", content_body) if not is_html else None,
-                html_content=Content("text/html", content_body) if is_html else None
-            )
-
-            # Add reply-to if provided
-            if reply_to:
-                message.reply_to = Email(reply_to)
-            
-            response = sg.send(message)
-            print(f"Email sent to {recipient_email} ({recipient_type}) - Status code: {response.status_code}")
+        url = f"https://api.sendgrid.com/v3/marketing/contacts?list_ids={list_id}"
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json"
+        }
         
-        print(f"All emails sent! (total recipients: {total_recipients})")
-        return True
+        req = urllib.request.Request(url, headers=headers, method='GET')
+        with urllib.request.urlopen(req, timeout=10) as response:
+            response_dict = json.loads(response.read().decode('utf-8'))
+        
+        contacts = response_dict.get('result', [])
+        list = []
+
+        for contact in contacts:
+            if list_id in contact.get('list_ids', []):
+                list.append({
+                    'email': contact.get('email'),
+                    'postal_code': contact.get('postal_code')
+                })
+        return list
     except Exception as e:
-        print(f"Error sending email: {e}")
-        return False
+        print(f"✗ Error fetching list {list_id}: {e}")
+        import traceback
+        traceback.print_exc()
+        return []
+
+
+def extract_zip_from_contact(contact, zip_field_name='zip_code'):
+    """Extract ZIP code from contact custom fields
+    
+    Args:
+        contact: Contact dict from SendGrid
+        zip_field_name: Name of the custom field containing ZIP code
+        
+    Returns:
+        ZIP code string or None
+    """
+    custom_fields = contact.get('custom_fields', {})
+    return custom_fields.get(zip_field_name)
 
 
 def lambda_handler(event, context):
@@ -574,47 +552,30 @@ def lambda_handler(event, context):
     Environment Variables:
         SENDGRID_API_KEY: SendGrid API key
         FROM_EMAIL: Sender email address
-        EMAIL_LIST: JSON array of recipient objects with 'email', 'type', and 'zip' keys
-                    Example: '[{"email":"call1@winlink.org","type":"plain","zip":"90210"},
-                              {"email":"call2@example.com","type":"html","zip":"10001"}]'
+        SENDGRID_HTML_LIST_ID: SendGrid list ID for HTML subscribers
+        SENDGRID_PLAIN_LIST_ID: SendGrid list ID for plain text subscribers
         REPLY_TO: Optional reply-to email address
-        OUTPUT_FILE: Optional - write to file instead of sending email
+        ZIP_CUSTOM_FIELD: Name of custom field containing ZIP (default: 'zip_code')
     """
 
-    # Get configuration from environment variables
     SENDGRID_API_KEY = os.environ.get('SENDGRID_API_KEY')
     FROM_EMAIL = os.environ.get('FROM_EMAIL')
-    REPLY_TO = os.environ.get('REPLY_TO')  # Optional: reply-to email address
-    OUTPUT_FILE = os.environ.get('OUTPUT_FILE')  # Optional: write to file instead of sending email
+    REPLY_TO = os.environ.get('REPLY_TO')
+    ZIP_CUSTOM_FIELD = os.environ.get('ZIP_CUSTOM_FIELD', 'zip_code')
+    
+    HTML_LIST_ID = os.environ.get('SENDGRID_HTML_LIST_ID')
+    PLAIN_LIST_ID = os.environ.get('SENDGRID_PLAIN_LIST_ID')
 
-    # Get EMAIL_LIST (new format with ZIP codes)
-    EMAIL_LIST_JSON = os.environ.get('EMAIL_LIST')
-    if not EMAIL_LIST_JSON:
-        print("Error: EMAIL_LIST environment variable is required")
+    if not all([SENDGRID_API_KEY, FROM_EMAIL, HTML_LIST_ID, PLAIN_LIST_ID]):
         return {
             'statusCode': 500,
-            'body': json.dumps('Missing EMAIL_LIST environment variable')
+            'body': json.dumps('Missing required environment variables')
         }
 
-    try:
-        email_list = json.loads(EMAIL_LIST_JSON)
-    except json.JSONDecodeError:
-        print(f"Error parsing EMAIL_LIST JSON: {EMAIL_LIST_JSON}")
-        return {
-            'statusCode': 500,
-            'body': json.dumps('Invalid EMAIL_LIST JSON format')
-        }
+    # Initialize SendGrid client
+    sg = SendGridAPIClient(SENDGRID_API_KEY)
 
-    # Validate that email_list contains objects with 'email' and 'zip' keys
-    for item in email_list:
-        if 'email' not in item or 'zip' not in item:
-            print("Error: EMAIL_LIST items must have 'email' and 'zip' keys")
-            return {
-                'statusCode': 500,
-                'body': json.dumps('EMAIL_LIST items must have email and zip keys')
-            }
-
-    # Fetch global data (solar and contests)
+    # Fetch global data
     print("Fetching solar data...")
     solar_data = fetch_solar_data()
 
@@ -622,128 +583,58 @@ def lambda_handler(event, context):
     all_contests = fetch_contest_data()
     contests = filter_contests_for_next_week(all_contests, days=7)
 
-    # Fetch weather data for each recipient
+    # Fetch lists from SendGrid
+    print("Fetching SendGrid lists...")
+    html_contacts = fetch_sendgrid_list(SENDGRID_API_KEY, HTML_LIST_ID)
+    plain_contacts = fetch_sendgrid_list(SENDGRID_API_KEY, PLAIN_LIST_ID)
+
+    if not html_contacts and not plain_contacts:
+        return {
+            'statusCode': 500,
+            'body': json.dumps('No contacts found in SendGrid lists')
+        }
+
+    # Combine all contacts with their type
+    all_recipients = [
+        {**contact, 'type': 'html'} for contact in html_contacts
+    ] + [
+        {**contact, 'type': 'plain'} for contact in plain_contacts
+    ]
+
+    # Fetch weather data for each unique ZIP
     print("Fetching weather forecasts...")
     weather_by_zip = {}
-    for recipient in email_list:
-        zip_code = recipient['zip']
+    for recipient in all_recipients:
+        zip_code = recipient.get('postal_code')
         
-        if zip_code not in weather_by_zip:
-            # Convert ZIP to coordinates
+        if zip_code and zip_code not in weather_by_zip:
             coords = zip_to_coords(zip_code)
             if coords:
-                # Fetch weather forecast
                 forecast = fetch_weather_forecast(coords[0], coords[1])
                 weather_by_zip[zip_code] = forecast
             else:
                 weather_by_zip[zip_code] = None
 
-    # Format email for each recipient
+    # Send personalized emails
     today = datetime.utcnow().strftime("%B %d, %Y")
     subject = f"Ham Radio Daily Digest - {today}"
 
-    # Send to each recipient with their personalized weather
-    if OUTPUT_FILE:
-        # For file output, use the first recipient's weather data
-        first_zip = email_list[0]['zip']
-        recipient_type = email_list[0].get('type', 'html').lower()
-        
-        print(f"Writing output to file: {OUTPUT_FILE} (using ZIP {first_zip})")
-        
-        text_body = f"""HAM RADIO DAILY DIGEST
-{today}
+    print(f"Sending emails to {len(all_recipients)} recipients...")
 
-{format_solar_text(solar_data)}
-
-{format_contests_text(contests)}
-
-{format_weather_text(weather_by_zip.get(first_zip), first_zip)}
-
-Data sources:
-- Solar: https://www.hamqsl.com/solar.html
-- Contests: https://www.contestcalendar.com
-- Weather: https://open-meteo.com
-"""
-
-        html_body = f"""
-        <html>
-            <head>
-                <style>
-                    body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; }}
-                    h2 {{ color: #2c5aa0; border-bottom: 2px solid #2c5aa0; padding-bottom: 5px; }}
-                    h3 {{ color: #4a7ba7; }}
-                    table {{ margin: 15px 0; }}
-                </style>
-            </head>
-            <body>
-                <h1>📻 Ham Radio Daily Digest</h1>
-                <p><em>{today}</em></p>
-
-                {format_solar_html(solar_data)}
-
-                <hr style="margin: 30px 0;">
-
-                {format_weather_html(weather_by_zip.get(first_zip), first_zip)}
-
-                <hr style="margin: 30px 0;">
-
-                {format_contests_html(contests)}
-
-                <hr style="margin: 30px 0;">
-
-                <p style="font-size: 12px; color: #666; text-align: center;">
-                    Data sources: 
-                    <a href="https://www.hamqsl.com/solar.html">HAMQSL.com</a> | 
-                    <a href="https://www.contestcalendar.com">WA7BNM Contest Calendar</a> |
-                    <a href="https://open-meteo.com">Open-Meteo</a>
-                </p>
-
-                <hr style="margin: 30px 0;">
-
-                <p style="font-size: 12px; color: #666; text-align: center;">
-                    You're receiving this email because you asked to be included in this digest. If you no longer wish to receive these emails, please just reply to this email and let us know!
-                    <br /><br />
-                    Landmark 717<br />
-                    8149 Santa Monica Blvd. #122,<br />
-                    Los Angeles CA 90046<br />
-                </p>
-
-                <hr style="margin: 30px 0;">
-
-            </body>
-        </html>
-        """
-
-        try:
-            with open(OUTPUT_FILE, 'w', encoding='utf-8') as f:
-                f.write(html_body if recipient_type == 'html' else text_body)
-            print(f"✅ Output written to {OUTPUT_FILE}")
-            return {
-                'statusCode': 200,
-                'body': json.dumps(f'Output written to {OUTPUT_FILE}')
-            }
-        except Exception as e:
-            print(f"Error writing file: {e}")
-            return {
-                'statusCode': 500,
-                'body': json.dumps(f'Failed to write file: {str(e)}')
-            }
-
-    # Send emails to each recipient
-    if not all([SENDGRID_API_KEY, FROM_EMAIL]):
-        return {
-            'statusCode': 500,
-            'body': json.dumps('Missing required environment variables for email sending')
-        }
-    
-    print(f"Sending emails to {len(email_list)} recipients...")
-    
-    for recipient in email_list:
-        recipient_email = recipient['email']
+    for recipient in all_recipients:
+        recipient_email = recipient.get('email')
         recipient_type = recipient.get('type', 'html').lower()
-        zip_code = recipient['zip']
+        zip_code = recipient.get('postal_code')
 
-        # Generate content with recipient's weather
+        if not recipient_email:
+            print(f"✗ Skipping recipient with no email address")
+            continue
+
+        if not zip_code:
+            print(f"✗ Skipping {recipient_email} - no ZIP code found")
+            continue
+
+        # Generate personalized content
         text_body = f"""HAM RADIO DAILY DIGEST
 {today}
 
@@ -795,7 +686,7 @@ Data sources:
                 <hr style="margin: 30px 0;">
 
                 <p style="font-size: 12px; color: #666; text-align: center;">
-                    You're receiving this email because you asked to be included in this digest. If you no longer wish to receive these emails, please just reply to this email and let us know!
+                    You're receiving this email because you opted in to this digest. Please reply if you wish to unsubscribe.
                     <br /><br />
                     Landmark 717<br />
                     8149 Santa Monica Blvd. #122,<br />
@@ -805,25 +696,14 @@ Data sources:
         </html>
         """
 
-        # Create content object
-        content_obj = {
-            'text': text_body,
-            'html': html_body
-        }
-        
-        # Determine content type for this recipient
+        unsubscribe_group = os.environ.get('UNSUBSCRIBE_GROUP_ID_HTML')
+
         if recipient_type == 'plain':
-            send_body = text_body
-        else:
-            send_body = html_body
+            unsubscribe_group = os.environ.get('UNSUBSCRIBE_GROUP_ID_PLAIN')
 
         try:
-            from sendgrid.helpers.mail import Mail, Email, To, Content
-
-            sg = SendGridAPIClient(SENDGRID_API_KEY)
-
             message = Mail(
-                from_email=Email(FROM_EMAIL, "Ham Radio Daily Digest"),
+                from_email=Email(FROM_EMAIL, "Ham Daily Digest"),
                 to_emails=To(recipient_email),
                 subject=subject,
                 plain_text_content=Content("text/plain", text_body) if recipient_type == 'plain' else None,
@@ -841,7 +721,7 @@ Data sources:
 
     return {
         'statusCode': 200,
-        'body': json.dumps(f'Emails sent to {len(email_list)} recipients')
+        'body': json.dumps(f'Emails sent to {len(all_recipients)} recipients')
     }
 
 
