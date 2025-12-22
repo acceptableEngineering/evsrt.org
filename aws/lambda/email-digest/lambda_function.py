@@ -823,7 +823,7 @@ Data sources:
             sg = SendGridAPIClient(SENDGRID_API_KEY)
 
             message = Mail(
-                from_email=Email(FROM_EMAIL, "Daily Ham Radio Digest"),
+                from_email=Email(FROM_EMAIL, "Ham Radio Daily Digest"),
                 to_emails=To(recipient_email),
                 subject=subject,
                 plain_text_content=Content("text/plain", text_body) if recipient_type == 'plain' else None,
