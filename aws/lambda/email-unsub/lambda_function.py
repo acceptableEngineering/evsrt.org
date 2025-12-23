@@ -1,9 +1,8 @@
 import json
 import os
-import urllib.request
-import urllib.error
 import hmac
 import hashlib
+from sendgrid import SendGridAPIClient
 
 
 def generate_verification_token(email, list_id, secret_key):
@@ -56,36 +55,20 @@ def remove_from_sendgrid_list(api_key, list_id, email):
         True if successful, False otherwise
     """
     try:
-        url = f"https://api.sendgrid.com/v3/marketing/lists/{list_id}/contacts"
-        headers = {
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json"
-        }
+        sg = SendGridAPIClient(api_key)
         
-        # SendGrid API uses query params for contact removal
-        request_url = f"{url}?contact_ids={email}"
-        
-        req = urllib.request.Request(
-            request_url,
-            headers=headers,
-            method='DELETE'
+        # Delete contact from list
+        response = sg.client.marketing.lists._(list_id).contacts.delete(
+            query_params={'emails': [email]}
         )
-        
-        with urllib.request.urlopen(req, timeout=10) as response:
-            result = response.read().decode('utf-8')
         
         print(f"✓ Removed {email} from list {list_id}")
         return True
         
-    except urllib.error.HTTPError as e:
-        if e.code == 204:  # SendGrid returns 204 for successful delete
-            print(f"✓ Removed {email} from list {list_id}")
-            return True
-        else:
-            print(f"✗ HTTP Error {e.code}: {e.reason}")
-            return False
     except Exception as e:
         print(f"✗ Error removing contact: {e}")
+        import traceback
+        traceback.print_exc()
         return False
 
 
@@ -200,7 +183,3 @@ def lambda_handler(event, context):
             'headers': {'Content-Type': 'text/html'},
             'body': '<h2>Server Error</h2><p>An unexpected error occurred</p>'
         }
-
-if __name__ == "__main__":
-    result = lambda_handler({}, {})
-    print(result)
