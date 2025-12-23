@@ -1,4 +1,6 @@
+import hmac
 import json
+import hashlib
 import os
 import sys
 from datetime import datetime, timedelta
@@ -545,6 +547,28 @@ def extract_zip_from_contact(contact, zip_field_name='zip_code'):
     return custom_fields.get(zip_field_name)
 
 
+def generate_verification_token(email, list_id, secret_key):
+    """Generate a verification token for unsubscribe URL
+
+    Args:
+        email: subscriber email
+        list_id: SendGrid list ID
+        secret_key: secret key for HMAC
+
+    Returns:
+        Truncated HMAC hash
+    """
+    message = f"{email}:{list_id}".encode('utf-8')
+    token = hmac.new(
+        secret_key.encode('utf-8'),
+        message,
+        hashlib.sha256
+    ).hexdigest()
+
+    # Truncate to first 12 characters for URL brevity
+    return token[:12]
+
+
 def lambda_handler(event, context):
     """AWS Lambda handler function
     
@@ -554,13 +578,11 @@ def lambda_handler(event, context):
         SENDGRID_HTML_LIST_ID: SendGrid list ID for HTML subscribers
         SENDGRID_PLAIN_LIST_ID: SendGrid list ID for plain text subscribers
         REPLY_TO: Optional reply-to email address
-        ZIP_CUSTOM_FIELD: Name of custom field containing ZIP (default: 'zip_code')
     """
 
     SENDGRID_API_KEY = os.environ.get('SENDGRID_API_KEY')
     FROM_EMAIL = os.environ.get('FROM_EMAIL')
     REPLY_TO = os.environ.get('REPLY_TO')
-    ZIP_CUSTOM_FIELD = os.environ.get('ZIP_CUSTOM_FIELD', 'zip_code')
     
     HTML_LIST_ID = os.environ.get('SENDGRID_HTML_LIST_ID')
     PLAIN_LIST_ID = os.environ.get('SENDGRID_PLAIN_LIST_ID')
@@ -624,6 +646,7 @@ def lambda_handler(event, context):
         recipient_email = recipient.get('email')
         recipient_type = recipient.get('type', 'html').lower()
         zip_code = recipient.get('postal_code')
+        unsub_url = f"https://" + os.environ.get('UNSUBSCRIBE_BASE_URL') + f"?email={recipient_email}&list={HTML_LIST_ID if recipient_type == 'html' else PLAIN_LIST_ID}&token={generate_verification_token(recipient_email, HTML_LIST_ID if recipient_type == 'html' else PLAIN_LIST_ID, os.environ.get('UNSUBSCRIBE_SECRET'))}"
 
         if not recipient_email:
             print(f"✗ Skipping recipient with no email address")
@@ -647,6 +670,8 @@ Data sources:
 - Solar: https://www.hamqsl.com/solar.html
 - Contests: https://www.contestcalendar.com
 - Weather: https://open-meteo.com
+
+Unsubscribe here: {unsub_url}
 """
 
         html_body = f"""
@@ -685,7 +710,7 @@ Data sources:
                 <hr style="margin: 30px 0;">
 
                 <p style="font-size: 12px; color: #666; text-align: center;">
-                    You're receiving this email because you opted in to this digest. Please reply if you wish to unsubscribe.
+                    This email was sent to {recipient_email} because you subscribed to the Ham Radio Daily Digest. <a href="{unsub_url}">Unsubscribe</a>?
                     <br /><br />
                     Landmark 717<br />
                     8149 Santa Monica Blvd. #122,<br />
