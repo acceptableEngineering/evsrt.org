@@ -57,9 +57,9 @@ def remove_from_sendgrid_list(api_key, list_id, email):
     try:
         sg = SendGridAPIClient(api_key)
         
-        # Delete contact from list
+        # Delete contact from list using query_params
         response = sg.client.marketing.lists._(list_id).contacts.delete(
-            query_params={'emails': [email]}
+            query_params={"contact_ids": email}
         )
         
         print(f"✓ Removed {email} from list {list_id}")
