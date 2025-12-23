@@ -86,3 +86,21 @@ jobs:
         aws lambda update-function-code \
           --function-name HamPals-Email-Digest \
           --zip-file fileb://lambda.zip
+
+
+    - name: Build Lambda email-unsub
+      run: |
+        cd ./aws/lambda/email-unsub/
+        rm -rf package lambda.zip
+        python -m pip install --upgrade pip
+        mkdir -p package
+        pip install -r requirements.txt -t package/
+        cp lambda_function.py package/
+        cd package && zip -r ../lambda.zip . && cd ..
+
+    - name: Upload Lambda email-unsub
+      run: |
+        cd ./aws/lambda/email-unsub/
+        aws lambda update-function-code \
+          --function-name HamPals-Email-Unsub \
+          --zip-file fileb://lambda.zip
