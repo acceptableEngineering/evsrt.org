@@ -522,6 +522,7 @@ def fetch_sendgrid_list(api_key, list_id):
         for contact in contacts:
             if list_id in contact.get('list_ids', []):
                 list.append({
+                    'id': contact.get('id'),
                     'email': contact.get('email'),
                     'postal_code': contact.get('postal_code')
                 })
@@ -646,7 +647,7 @@ def lambda_handler(event, context):
         recipient_email = recipient.get('email')
         recipient_type = recipient.get('type', 'html').lower()
         zip_code = recipient.get('postal_code')
-        unsub_url = f"https://" + os.environ.get('UNSUBSCRIBE_BASE_URL') + f"?email={recipient_email}&list={HTML_LIST_ID if recipient_type == 'html' else PLAIN_LIST_ID}&verify={generate_verification_token(recipient_email, HTML_LIST_ID if recipient_type == 'html' else PLAIN_LIST_ID, os.environ.get('UNSUBSCRIBE_SECRET'))}"
+        unsub_url = f"https://" + os.environ.get('UNSUBSCRIBE_BASE_URL') + f"?id={recipient.get('id')}&list={HTML_LIST_ID if recipient_type == 'html' else PLAIN_LIST_ID}"
 
         if not recipient_email:
             print(f"✗ Skipping recipient with no email address")

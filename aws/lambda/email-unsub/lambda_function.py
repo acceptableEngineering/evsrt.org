@@ -1,70 +1,30 @@
 import json
 import os
-import hmac
-import hashlib
 from sendgrid import SendGridAPIClient
 
 
-def generate_verification_token(email, list_id, secret_key):
-    """Generate a verification token for unsubscribe URL
-    
-    Args:
-        email: subscriber email
-        list_id: SendGrid list ID
-        secret_key: secret key for HMAC
-        
-    Returns:
-        Truncated HMAC hash
-    """
-    message = f"{email}:{list_id}".encode('utf-8')
-    token = hmac.new(
-        secret_key.encode('utf-8'),
-        message,
-        hashlib.sha256
-    ).hexdigest()
-    
-    # Truncate to first 12 characters for URL brevity
-    return token[:12]
-
-
-def verify_token(email, list_id, provided_token, secret_key):
-    """Verify the unsubscribe token
-    
-    Args:
-        email: subscriber email
-        list_id: SendGrid list ID
-        provided_token: token from URL
-        secret_key: secret key for HMAC
-        
-    Returns:
-        True if token is valid, False otherwise
-    """
-    expected_token = generate_verification_token(email, list_id, secret_key)
-    return hmac.compare_digest(expected_token, provided_token)
-
-
-def remove_from_sendgrid_list(api_key, list_id, email):
+def remove_from_sendgrid_list(api_key, list_id, id):
     """Remove contact from SendGrid list
-    
+
     Args:
         api_key: SendGrid API key
         list_id: SendGrid list ID
-        email: email to remove
+        id: ID to remove
         
     Returns:
         True if successful, False otherwise
     """
     try:
         sg = SendGridAPIClient(api_key)
-        
+
         # Delete contact from list using query_params
         response = sg.client.marketing.lists._(list_id).contacts.delete(
-            query_params={"contact_ids": email}
+            query_params={"contact_ids": id}
         )
-        
-        print(f"✓ Removed {email} from list {list_id}")
+
+        print(f"✓ Removed {id} from list {list_id}")
         return True
-        
+
     except Exception as e:
         print(f"✗ Error removing contact: {e}")
         import traceback
@@ -74,68 +34,55 @@ def remove_from_sendgrid_list(api_key, list_id, email):
 
 def lambda_handler(event, context):
     """Handle unsubscribe requests
-    
+
     Query parameters:
-        email: subscriber email (URL encoded)
+        id: subscriber ID
         list: SendGrid list ID
-        verify: HMAC verification token
-    
+
     Environment Variables:
         SENDGRID_API_KEY: SendGrid API key
-        UNSUBSCRIBE_SECRET: Secret key for HMAC verification
     """
-    
+
     try:
         # Get parameters from query string
         query_params = event.get('queryStringParameters', {})
-        
+
         if not query_params:
             return {
                 'statusCode': 400,
                 'headers': {'Content-Type': 'text/html'},
                 'body': '<h2>Invalid Request</h2><p>Missing parameters</p>'
             }
-        
-        email = query_params.get('email', '').lower()
+
+        id = query_params.get('id', '').lower()
         list_id = query_params.get('list')
-        provided_token = query_params.get('verify')
-        
-        if not all([email, list_id, provided_token]):
+
+        if not all([id, list_id]):
             return {
                 'statusCode': 400,
                 'headers': {'Content-Type': 'text/html'},
-                'body': '<h2>Invalid Request</h2><p>Missing email, list, or verify parameter</p>'
+                'body': '<h2>Invalid Request</h2><p>Missing required parameter(s)</p>'
             }
-        
+
         # Get secrets from environment
         SENDGRID_API_KEY = os.environ.get('SENDGRID_API_KEY')
-        UNSUBSCRIBE_SECRET = os.environ.get('UNSUBSCRIBE_SECRET')
-        
-        if not all([SENDGRID_API_KEY, UNSUBSCRIBE_SECRET]):
+
+        if not all([SENDGRID_API_KEY]):
             print("Error: Missing environment variables")
             return {
                 'statusCode': 500,
                 'headers': {'Content-Type': 'text/html'},
                 'body': '<h2>Server Error</h2><p>Configuration error</p>'
             }
-        
-        # Verify token
-        if not verify_token(email, list_id, provided_token, UNSUBSCRIBE_SECRET):
-            print(f"✗ Invalid token for {email}")
-            return {
-                'statusCode': 403,
-                'headers': {'Content-Type': 'text/html'},
-                'body': '<h2>Forbidden</h2><p>Invalid verification token</p>'
-            }
-        
+
         # Remove from SendGrid list
-        if not remove_from_sendgrid_list(SENDGRID_API_KEY, list_id, email):
+        if not remove_from_sendgrid_list(SENDGRID_API_KEY, list_id, id):
             return {
                 'statusCode': 500,
                 'headers': {'Content-Type': 'text/html'},
                 'body': '<h2>Server Error</h2><p>Failed to process unsubscribe</p>'
             }
-        
+
         # Success
         return {
             'statusCode': 200,
@@ -165,14 +112,13 @@ def lambda_handler(event, context):
                 <body>
                     <div class="container">
                         <h2>Unsubscribed</h2>
-                        <p>You have been removed from the Ham Radio Daily Digest mailing list.</p>
-                        <p>We're sorry to see you go. If you change your mind, you can re-subscribe anytime.</p>
+                        <p>You have been removed from that mailing list. See ya! 👋</p>
                     </div>
                 </body>
             </html>
             '''
         }
-        
+
     except Exception as e:
         print(f"Error processing unsubscribe: {e}")
         import traceback
