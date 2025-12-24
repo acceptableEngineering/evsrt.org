@@ -749,10 +749,9 @@ Unsubscribe here: {unsub_url}
 if __name__ == "__main__":
     # Set test environment variables
     # os.environ['OUTPUT_FILE'] = 'ham_radio_digest_output.html'
-    # os.environ['EMAIL_LIST'] = json.dumps([
-    #     {"email": "markmutti@gmail.com", "type": "html", "zip": "91601"}
-    # ])
 
     # Run the handler
     result = lambda_handler({}, {})
     print(result)
+    if os.environ.get('MONITORING_URL'):
+        urllib.request.urlopen(os.environ.get('MONITORING_URL'))
