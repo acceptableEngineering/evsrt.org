@@ -721,11 +721,6 @@ Unsubscribe here: {unsub_url}
         </html>
         """
 
-        unsubscribe_group = os.environ.get('UNSUBSCRIBE_GROUP_ID_HTML')
-
-        if recipient_type == 'plain':
-            unsubscribe_group = os.environ.get('UNSUBSCRIBE_GROUP_ID_PLAIN')
-
         try:
             message = Mail(
                 from_email=Email(FROM_EMAIL, "Ham Daily Digest"),
