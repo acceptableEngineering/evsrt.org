@@ -739,6 +739,9 @@ Unsubscribe here: {unsub_url}
         except Exception as e:
             print(f"✗ Error sending email to {recipient_email}: {e}")
 
+    if os.environ.get('MONITORING_URL'):
+        urllib.request.urlopen(os.environ.get('MONITORING_URL'))
+
     return {
         'statusCode': 200,
         'body': json.dumps(f'Emails sent to {len(all_recipients)} recipients')
@@ -753,5 +756,3 @@ if __name__ == "__main__":
     # Run the handler
     result = lambda_handler({}, {})
     print(result)
-    if os.environ.get('MONITORING_URL'):
-        urllib.request.urlopen(os.environ.get('MONITORING_URL'))
