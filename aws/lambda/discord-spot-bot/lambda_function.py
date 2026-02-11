@@ -20,8 +20,9 @@ def lambda_handler(event, context):
     source = payload.get("source", "N/A")
     comment = payload.get("comment", "N/A")
 
-    # Determine which webhook URL to use
-    webhook_url = os.environ.get('webhook_spots')
+    # Get webhook URLs from environment variables
+    discord_webhook = os.environ.get('discord_webhook')
+    mattermost_webhook = os.environ.get('mattermost_webhook')
 
     # Format Discord message
     discord_message = {
@@ -34,18 +35,49 @@ def lambda_handler(event, context):
         "username": "HamBOT 🐷"
     }
 
-    # Sending the message to Discord
-    try:
-        response = requests.post(webhook_url, json=discord_message)
-        response.raise_for_status()
-        print("Notification sent to Discord successfully.")
-        return {
-            "statusCode": 200,
-            "body": json.dumps({"message": "Notification sent to Discord successfully."})
-        }
-    except requests.RequestException as e:
-        print(f"Error sending notification to Discord: {e}")
-        return {
-            "statusCode": 500,
-            "body": json.dumps({"error": str(e)})
-        }
+    # Format Mattermost message (using Markdown formatting)
+    mattermost_message = {
+        "text": f"📡 **New {source.upper()} Spot Alert!**\n\n"
+                f"📌 **Callsign:** {full_callsign}\n"
+                f"🔊 **Frequency:** {frequency} MHz ({band})\n"
+                f"🎛️ **Mode:** {mode.upper()} ({mode_detail.upper()})\n"
+                f"👤 **Spotter:** {spotter}\n"
+                f"💬 **Comment:** {comment}",
+        "username": "HamBOT"
+    }
+
+    results = []
+    
+    # Send to Discord
+    if discord_webhook:
+        try:
+            response = requests.post(discord_webhook, json=discord_message)
+            response.raise_for_status()
+            print("Notification sent to Discord successfully.")
+            results.append("Discord: Success")
+        except requests.RequestException as e:
+            print(f"Error sending notification to Discord: {e}")
+            results.append(f"Discord: Failed - {e}")
+    else:
+        print("Discord webhook URL not configured.")
+        results.append("Discord: Not configured")
+
+    # Send to Mattermost
+    if mattermost_webhook:
+        try:
+            response = requests.post(mattermost_webhook, json=mattermost_message)
+            response.raise_for_status()
+            print("Notification sent to Mattermost successfully.")
+            results.append("Mattermost: Success")
+        except requests.RequestException as e:
+            print(f"Error sending notification to Mattermost: {e}")
+            results.append(f"Mattermost: Failed - {e}")
+    else:
+        print("Mattermost webhook URL not configured.")
+        results.append("Mattermost: Not configured")
+
+    # Return overall status
+    return {
+        "statusCode": 200,
+        "body": json.dumps({"message": "Notifications processed.", "results": results})
+    }
