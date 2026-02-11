@@ -43,7 +43,8 @@ def lambda_handler(event, context):
                 f"🎛️ **Mode:** {mode.upper()} ({mode_detail.upper()})\n"
                 f"👤 **Spotter:** {spotter}\n"
                 f"💬 **Comment:** {comment}",
-        "username": "HamBOT"
+        "username": "HamBOT",
+        "icon_emoji": ":pig:"  # or use "icon_url": "https://url-to-image.png"
     }
 
     results = []
