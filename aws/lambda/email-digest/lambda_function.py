@@ -33,42 +33,64 @@ def fetch_solar_data():
     """Fetch and parse solar propagation data from hamqsl.com"""
     url = "https://www.hamqsl.com/solarrss.php"
 
+    def get_text(element, tag):
+        el = element.find(tag)
+        return el.text.strip() if el is not None and el.text else 'N/A'
+
     try:
         with urllib.request.urlopen(url, timeout=10) as response:
             xml_data = response.read().decode('utf-8')
 
         root = ET.fromstring(xml_data)
-        solar = root.find('.//solar/solardata')
+
+        solar = (
+            root.find('.//solar/solardata') or
+            root.find('.//solardata') or
+            root.find('channel/item/solar/solardata')
+        )
 
         if solar is None:
+            print(f"✗ Could not find solardata element in XML.")
+            print(f"  Root tag: {root.tag}, children: {[c.tag for c in root]}")
+            print(f"  XML preview: {xml_data[:800]}")
             return None
 
-        # Extract key solar data
         data = {
-            'updated': solar.find('updated').text if solar.find('updated') is not None else 'N/A',
-            'solarflux': solar.find('solarflux').text if solar.find('solarflux') is not None else 'N/A',
-            'aindex': solar.find('aindex').text if solar.find('aindex') is not None else 'N/A',
-            'kindex': solar.find('kindex').text if solar.find('kindex') is not None else 'N/A',
-            'sunspots': solar.find('sunspots').text if solar.find('sunspots') is not None else 'N/A',
-            'solarwind': solar.find('solarwind').text if solar.find('solarwind') is not None else 'N/A',
-            'geomagfield': solar.find('geomagfield').text if solar.find('geomagfield') is not None else 'N/A',
-            'signalnoise': solar.find('signalnoise').text if solar.find('signalnoise') is not None else 'N/A',
+            'updated':     get_text(solar, 'updated'),
+            'solarflux':   get_text(solar, 'solarflux'),
+            'aindex':      get_text(solar, 'aindex'),
+            'kindex':      get_text(solar, 'kindex'),
+            'sunspots':    get_text(solar, 'sunspots'),
+            'solarwind':   get_text(solar, 'solarwind'),
+            'geomagfield': get_text(solar, 'geomagfield'),
+            'signalnoise': get_text(solar, 'signalnoise'),
         }
 
-        # Extract band conditions
         conditions = solar.find('calculatedconditions')
         data['band_conditions'] = []
         if conditions is not None:
             for band in conditions.findall('band'):
                 data['band_conditions'].append({
-                    'name': band.get('name'),
-                    'time': band.get('time'),
-                    'condition': band.text
+                    'name':      band.get('name'),
+                    'time':      band.get('time'),
+                    'condition': band.text.strip() if band.text else 'N/A'
                 })
+        else:
+            print("⚠ No calculatedconditions element found in solardata")
 
+        print(f"✓ Solar data fetched: SFI={data['solarflux']}, A={data['aindex']}, K={data['kindex']}")
         return data
+
+    except ET.ParseError as e:
+        print(f"✗ XML parse error fetching solar data: {e}")
+        return None
+    except urllib.error.URLError as e:
+        print(f"✗ Network error fetching solar data: {e}")
+        return None
     except Exception as e:
-        print(f"Error fetching solar data: {e}")
+        print(f"✗ Unexpected error fetching solar data: {e}")
+        import traceback
+        traceback.print_exc()
         return None
 
 
