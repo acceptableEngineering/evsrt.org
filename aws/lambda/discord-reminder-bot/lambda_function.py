@@ -26,7 +26,7 @@ SCHEDULES = [
         "days_of_week": [6],
         "week_of_month": [1, 3],
         "hour": 12,
-        "message": "@everyone ⚠️ **EVSRT Tonight**\nWon't you join us at 9pm on 146.450 MHz?",
+        "message": "@everyone ⚠️ **EVSRT Tonight**\nWon't you join us at 9pm on 146.450 MHz? PS: You can check your audio and/or listen over in #evsrt-audio (live scanner feed of .45)",
         "channel": "evsrt",
     },
     {
@@ -34,7 +34,7 @@ SCHEDULES = [
         "days_of_week": [6],
         "week_of_month": [1, 3],
         "hour": 21,
-        "message": "@everyone 🚨 **EVSRT Starting NOW!**\nBe there, and be square: 146.450 MHz, FM, no PL. Log Sheet: https://docs.google.com/spreadsheets/d/1PBsWHHV3D8bmO1gaDfxEkkpriymMZxA0sGjpjUOCcxI/edit?gid=0#gid=0",
+        "message": "@everyone 🚨 **EVSRT Starting NOW!**\nBe there, and be square: 146.450 MHz, FM, no PL. Log Sheet: https://docs.google.com/spreadsheets/d/1PBsWHHV3D8bmO1gaDfxEkkpriymMZxA0sGjpjUOCcxI/edit?gid=0#gid=0 - PS: You can check your audio and/or listen over in #evsrt-audio (live scanner feed of .45)",
         "channel": "evsrt",
     },
     {
