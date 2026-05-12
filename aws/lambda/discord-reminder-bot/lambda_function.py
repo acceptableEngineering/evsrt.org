@@ -4,22 +4,6 @@ import requests
 from datetime import datetime
 from zoneinfo import ZoneInfo  # Python 3.9+
 
-def cw_random_string():
-    strings = [
-        "Hey lazy-ass, did you get your 15 minutes of CW practice in today?",
-        "Practice CW or die.",
-        "NO LINE DANCING, ONLY CW PRACTICE!!",
-        "Did you get your 15 minutes of CW practice in today?",
-        "NO PINK EYE, ONLY CW PRACTICE.",
-        "Not decoding 20 WPM yet, eh? Did you practice today? Mmm-hmm...",
-        "You can decrease the number of people you will disappoint with your CW by practicing more. Did you practice today?",
-    ]
-
-    now_utc = datetime.utcnow()
-    now_pt = now_utc.replace(tzinfo=ZoneInfo("UTC")).astimezone(ZoneInfo("America/Los_Angeles"))
-
-    return strings[now_pt.weekday()]
-
 SCHEDULES = [
     {
         "name": "EVSRT Reminder",
@@ -36,14 +20,6 @@ SCHEDULES = [
         "hour": 21,
         "message": "@everyone 🚨 **EVSRT Starting NOW!**\nBe there, and be square: 146.450 MHz, FM, no PL. Log Sheet: https://docs.google.com/spreadsheets/d/1PBsWHHV3D8bmO1gaDfxEkkpriymMZxA0sGjpjUOCcxI/edit?gid=0#gid=0 - PS: You can check your audio and/or listen over in #evsrt-audio (live scanner feed of .45)",
         "channel": "evsrt",
-    },
-    {
-        "name": "Daily CW Practice Check-In",
-        "days_of_week": [0,1,2,3,4,5,6],
-        "week_of_month": [1,2,3,4,5],
-        "hour": 21,
-        "message": cw_random_string() + " (For those in the blood pact) ⭐",
-        "channel": "cw_club",
     },
 ]
 
