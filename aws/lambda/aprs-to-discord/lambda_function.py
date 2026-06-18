@@ -34,8 +34,24 @@ USER_AGENT = "evsrt-aprs-to-discord/1.0 (+https://evsrt.org)"
 APRS_MAX_TARGETS = 20
 
 
+def _expand_callsign(token):
+    """Expand a watch-list token into concrete aprs.fi targets.
+
+    aprs.fi matches exact identifiers (no wildcards), so a trailing '*'
+    is expanded here: "BASE*" (or "BASE-*") means the base call on any
+    SSID, i.e. the bare base (SSID 0) plus BASE-1 .. BASE-15.
+    """
+    if token.endswith("*"):
+        base = token[:-1].rstrip("-")
+        if not base:
+            return []
+        return [base] + [f"{base}-{i}" for i in range(1, 16)]
+    return [token]
+
+
 def _load_callsigns():
-    """Watch list from callsigns.txt -- one per line, '#' comments ignored."""
+    """Watch list from callsigns.txt -- one per line, '#' comments ignored.
+    Trailing-'*' wildcards are expanded to every SSID (see _expand_callsign)."""
     path = Path(__file__).parent / "callsigns.txt"
     if not path.exists():
         print("callsigns.txt not found next to lambda_function.py")
@@ -45,9 +61,10 @@ def _load_callsigns():
         cs = line.strip().upper()
         if not cs or cs.startswith("#"):
             continue
-        if cs not in seen:
-            seen.add(cs)
-            out.append(cs)
+        for target in _expand_callsign(cs):
+            if target not in seen:
+                seen.add(target)
+                out.append(target)
     return out
 
 
