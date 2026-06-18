@@ -96,6 +96,31 @@ def _query_aprs(callsigns, api_key):
     return entries
 
 
+def _via(path):
+    """Human 'Via' summary derived from an APRS path's q-construct.
+
+    The q-construct (qAR, qAC, …) records how the packet entered APRS-IS;
+    for RF receipt the callsign right after it is the igate that heard it.
+      qAR / qAr / qAo / qAU -> received from RF, gated by the next station
+      qAC / qAS / qAX        -> injected over the internet (no RF hop)
+    Returns a display string, or None if the path has no q-construct.
+    """
+    if not path:
+        return None
+    tokens = [t for t in path.split(",") if t]
+    q = next((t for t in tokens if t.lower().startswith("qa")), None)
+    if q is None:
+        return None
+    ql = q.lower()
+    if ql in ("qar", "qao", "qau"):
+        idx = tokens.index(q)
+        igate = tokens[idx + 1] if idx + 1 < len(tokens) else "?"
+        return f"RF → {igate}"
+    if ql in ("qac", "qas", "qax"):
+        return "Internet"
+    return None
+
+
 def _format_message(active, now):
     """Spot-bot-style: a header, then one labelled block per station."""
     blocks = []
@@ -112,6 +137,9 @@ def _format_message(active, now):
         if lat and lng:
             lines.append(f"\U0001F4CD **Position:** {lat}, {lng}")
             lines.append(f"\U0001F517 https://aprs.fi/?call={name}")
+        via = _via(entry.get("path"))
+        if via:
+            lines.append(f"\U0001F4F6 **Via:** {via}")
         try:
             speed = float(entry["speed"]) if entry.get("speed") not in (None, "") else 0.0
         except (TypeError, ValueError):
