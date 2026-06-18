@@ -1,0 +1,4 @@
+# APRS watch list for aprs-to-discord.
+# One callsign per line (SSIDs allowed, e.g. W6XYZ-9).
+# Lines starting with '#' and blank lines are ignored.
+# Add the callsigns you want to monitor below:

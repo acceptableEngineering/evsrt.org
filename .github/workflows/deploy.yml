@@ -104,3 +104,21 @@ jobs:
         aws lambda update-function-code \
           --function-name HamPals-Email-Unsub \
           --zip-file fileb://lambda.zip
+
+
+    - name: Build Lambda aprs-to-discord
+      run: |
+        cd ./aws/lambda/aprs-to-discord/
+        rm -rf package lambda.zip
+        python -m pip install --upgrade pip
+        mkdir -p package
+        pip install -r requirements.txt -t package/
+        cp lambda_function.py callsigns.txt package/
+        cd package && zip -r ../lambda.zip . && cd ..
+
+    - name: Upload Lambda aprs-to-discord
+      run: |
+        cd ./aws/lambda/aprs-to-discord/
+        aws lambda update-function-code \
+          --function-name HamPals-APRS-Watch \
+          --zip-file fileb://lambda.zip
