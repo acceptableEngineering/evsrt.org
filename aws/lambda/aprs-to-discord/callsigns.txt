@@ -2,4 +2,6 @@
 # One callsign per line (SSIDs allowed, e.g. W6XYZ-9).
 # Lines starting with '#' and blank lines are ignored.
 # Add the callsigns you want to monitor below:
-WZ1EEE-8
+WZ1EEE*
+K3MGM*
+KI6CR*
