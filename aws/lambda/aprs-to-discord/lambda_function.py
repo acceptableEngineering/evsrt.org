@@ -80,21 +80,38 @@ def _query_aprs(callsigns, api_key):
 
 
 def _format_message(active, now):
-    lines = ["\U0001F4E1 **APRS activity**"]
+    """Spot-bot-style: a header, then one labelled block per station."""
+    blocks = []
     for entry, last in sorted(active, key=lambda x: x[1], reverse=True):
         name = entry.get("name", "?")
         mins = max(0, now - last) // 60
-        when = "just now" if mins == 0 else f"{mins} min ago"
-        line = f"• **{name}** — heard {when}"
+        heard = "just now" if mins == 0 else f"{mins} min ago"
+
+        lines = [
+            f"\U0001F4FB **Callsign:** {name}",
+            f"\U0001F552 **Heard:** {heard}",
+        ]
         lat, lng = entry.get("lat"), entry.get("lng")
         if lat and lng:
-            line += f" at {lat}, {lng}  <https://aprs.fi/?call={name}>"
+            lines.append(f"\U0001F4CD **Position:** {lat}, {lng}")
+            lines.append(f"\U0001F517 https://aprs.fi/?call={name}")
+        try:
+            speed = float(entry["speed"]) if entry.get("speed") not in (None, "") else 0.0
+        except (TypeError, ValueError):
+            speed = 0.0
+        if speed > 0:
+            lines.append(f"\U0001F697 **Speed:** {speed:.0f} km/h")
         comment = (entry.get("comment") or "").strip()
         if comment:
-            line += f" — _{comment}_"
-        lines.append(line)
+            lines.append(f"\U0001F4AC **Comment:** {comment}")
+        blocks.append("\n".join(lines))
+
+    divider = "\n" + "─" * 12 + "\n"
+    message = "\U0001F4E1 **APRS Activity**\n\n" + divider.join(blocks)
     # Discord hard-caps a message at 2000 chars.
-    return "\n".join(lines)[:1900]
+    if len(message) > 1900:
+        message = message[:1900].rstrip() + "\n… (truncated)"
+    return message
 
 
 def lambda_handler(event, context):
@@ -128,7 +145,7 @@ def lambda_handler(event, context):
         print(f"no activity in last {lookback}s among {len(callsigns)} callsign(s)")
         return {"statusCode": 200, "body": "no recent activity"}
 
-    message = {"content": _format_message(active, now), "username": "APRS \U0001F4E1"}
+    message = {"content": _format_message(active, now), "username": "APRS Watch \U0001F4E1"}
     resp = requests.post(discord_webhook, json=message, timeout=20)
     resp.raise_for_status()
     print(f"posted {len(active)} active callsign(s) to Discord")
