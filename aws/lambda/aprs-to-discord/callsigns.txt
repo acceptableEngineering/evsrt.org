@@ -1,5 +1,7 @@
 # APRS watch list for aprs-to-discord.
 # One callsign per line (SSIDs allowed, e.g. W6XYZ-9).
+# A trailing '*' matches all SSIDs of a base call (e.g. WZ1EEE* covers
+# WZ1EEE and WZ1EEE-1 through WZ1EEE-15).
 # Lines starting with '#' and blank lines are ignored.
 # Add the callsigns you want to monitor below:
 WZ1EEE*
