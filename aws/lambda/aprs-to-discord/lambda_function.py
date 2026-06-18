@@ -96,26 +96,39 @@ def _query_aprs(callsigns, api_key):
     return entries
 
 
-def _via(path):
-    """Human 'Via' summary derived from an APRS path's q-construct.
+def _via(entry):
+    """Human 'Via' summary for a station, from its path + tocall.
 
-    The q-construct (qAR, qAC, …) records how the packet entered APRS-IS;
-    for RF receipt the callsign right after it is the igate that heard it.
-      qAR / qAr / qAo / qAU -> received from RF, gated by the next station
-      qAC / qAS / qAX        -> injected over the internet (no RF hop)
-    Returns a display string, or None if the path has no q-construct.
+    The path's q-construct records how the packet entered APRS-IS, and the
+    callsign right after it is the gateway/igate that fed it in:
+      qAR / qAo / qAU  -> received from RF, gated by the next station
+      qAC / qAS / qAX  -> injected over the internet (no RF hop)
+    DMR gateways (Brandmeister) gate via qAR too, so distinguish them: a
+    'DMR' path token and/or an APBM* tocall means it came in over DMR, not
+    over-the-air VHF/UHF RF -- report those as DMR, not RF.
+    Returns a display string, or None if it can't be determined.
     """
-    if not path:
-        return None
+    path = entry.get("path") or ""
+    dstcall = (entry.get("dstcall") or "").upper()
     tokens = [t for t in path.split(",") if t]
+
     q = next((t for t in tokens if t.lower().startswith("qa")), None)
+    igate = None
+    if q is not None:
+        idx = tokens.index(q)
+        igate = tokens[idx + 1] if idx + 1 < len(tokens) else None
+
+    is_dmr = dstcall.startswith("APBM") or any(
+        t.upper().rstrip("*") == "DMR" for t in tokens
+    )
+    if is_dmr:
+        return f"DMR → {igate}" if igate else "DMR"
+
     if q is None:
         return None
     ql = q.lower()
     if ql in ("qar", "qao", "qau"):
-        idx = tokens.index(q)
-        igate = tokens[idx + 1] if idx + 1 < len(tokens) else "?"
-        return f"RF → {igate}"
+        return f"RF → {igate}" if igate else "RF"
     if ql in ("qac", "qas", "qax"):
         return "Internet"
     return None
@@ -137,7 +150,7 @@ def _format_message(active, now):
         if lat and lng:
             lines.append(f"\U0001F4CD **Position:** {lat}, {lng}")
             lines.append(f"\U0001F517 https://aprs.fi/?call={name}")
-        via = _via(entry.get("path"))
+        via = _via(entry)
         if via:
             lines.append(f"\U0001F4F6 **Via:** {via}")
         try:
