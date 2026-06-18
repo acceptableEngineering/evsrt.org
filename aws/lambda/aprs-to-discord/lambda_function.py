@@ -100,7 +100,8 @@ def _format_message(active, now):
         except (TypeError, ValueError):
             speed = 0.0
         if speed > 0:
-            lines.append(f"\U0001F697 **Speed:** {speed:.0f} km/h")
+            mph = round(speed * 0.621371)
+            lines.append(f"\U0001F697 **Speed:** {mph}MPH ({round(speed)} km/h)")
         comment = (entry.get("comment") or "").strip()
         if comment:
             lines.append(f"\U0001F4AC **Comment:** {comment}")
