@@ -120,5 +120,5 @@ jobs:
       run: |
         cd ./aws/lambda/aprs-to-discord/
         aws lambda update-function-code \
-          --function-name EVSRT-APRS \
+          --function-name HamPals-APRS-Watch \
           --zip-file fileb://lambda.zip
