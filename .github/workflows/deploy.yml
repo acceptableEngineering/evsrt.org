@@ -10,6 +10,51 @@ jobs:
     steps:
     - name: Checkout
       uses: actions/checkout@v3
+      with:
+        # Full history so we can diff this push against its predecessor.
+        fetch-depth: 0
+
+    - name: Detect changed paths
+      id: changes
+      run: |
+        BEFORE="${{ github.event.before }}"
+        ZERO="0000000000000000000000000000000000000000"
+        if [ -z "$BEFORE" ] || [ "$BEFORE" = "$ZERO" ] || ! git cat-file -e "${BEFORE}^{commit}" 2>/dev/null; then
+          # First push, force-push, or unknown base -> deploy everything.
+          echo "Base commit unavailable; deploying all targets."
+          CHANGED="__ALL__"
+        else
+          CHANGED="$(git diff --name-only "$BEFORE" "${{ github.sha }}")"
+        fi
+        echo "Changed files:"
+        echo "$CHANGED"
+
+        changed() {
+          [ "$CHANGED" = "__ALL__" ] && return 0
+          echo "$CHANGED" | grep -q "^$1"
+        }
+
+        site=false;     changed "site/"                            && site=true
+        reminder=false; changed "aws/lambda/discord-reminder-bot/" && reminder=true
+        spot=false;     changed "aws/lambda/discord-spot-bot/"     && spot=true
+        digest=false;   changed "aws/lambda/email-digest/"         && digest=true
+        unsub=false;    changed "aws/lambda/email-unsub/"          && unsub=true
+        aprs=false;     changed "aws/lambda/aprs-to-discord/"      && aprs=true
+
+        any_lambda=false
+        if [ "$reminder" = true ] || [ "$spot" = true ] || [ "$digest" = true ] || [ "$unsub" = true ] || [ "$aprs" = true ]; then
+          any_lambda=true
+        fi
+
+        {
+          echo "site=$site"
+          echo "reminder=$reminder"
+          echo "spot=$spot"
+          echo "digest=$digest"
+          echo "unsub=$unsub"
+          echo "aprs=$aprs"
+          echo "any_lambda=$any_lambda"
+        } >> "$GITHUB_OUTPUT"
 
     - name: Configure AWS CLI SDK
       uses: aws-actions/configure-aws-credentials@v2
@@ -19,6 +64,7 @@ jobs:
         aws-region: us-east-1
 
     - name: Deploy static content to S3
+      if: steps.changes.outputs.site == 'true'
       env:
         AWS_S3_BUCKET_NAME: ${{ secrets.AWS_S3_BUCKET_NAME }}
       run: |
@@ -32,11 +78,13 @@ jobs:
         aws s3 sync ./site/ s3://${S3_DEST}/ --region us-west-2 --cache-control max-age=120,must-revalidate --delete
 
     - name: Set up Python
+      if: steps.changes.outputs.any_lambda == 'true'
       uses: actions/setup-python@v4
       with:
         python-version: '3.11'
 
     - name: Build Lambda discord-reminder-bot
+      if: steps.changes.outputs.reminder == 'true'
       run: |
         cd ./aws/lambda/discord-reminder-bot/
         python -m pip install --upgrade pip
@@ -46,6 +94,7 @@ jobs:
         cd package && zip -r ../lambda.zip . && cd ..
 
     - name: Upload Lambda discord-reminder-bot
+      if: steps.changes.outputs.reminder == 'true'
       run: |
         cd ./aws/lambda/discord-reminder-bot/
         aws lambda update-function-code \
@@ -54,6 +103,7 @@ jobs:
 
 
     - name: Build Lambda discord-spot-bot
+      if: steps.changes.outputs.spot == 'true'
       run: |
         cd ./aws/lambda/discord-spot-bot/
         python -m pip install --upgrade pip
@@ -63,6 +113,7 @@ jobs:
         cd package && zip -r ../lambda.zip . && cd ..
 
     - name: Upload Lambda discord-spot-bot
+      if: steps.changes.outputs.spot == 'true'
       run: |
         cd ./aws/lambda/discord-spot-bot/
         aws lambda update-function-code \
@@ -71,6 +122,7 @@ jobs:
 
 
     - name: Build Lambda email-digest
+      if: steps.changes.outputs.digest == 'true'
       run: |
         cd ./aws/lambda/email-digest/
         rm -rf package lambda.zip
@@ -81,6 +133,7 @@ jobs:
         cd package && zip -r ../lambda.zip . && cd ..
 
     - name: Upload Lambda email-digest
+      if: steps.changes.outputs.digest == 'true'
       run: |
         cd ./aws/lambda/email-digest/
         aws lambda update-function-code \
@@ -89,6 +142,7 @@ jobs:
 
 
     - name: Build Lambda email-unsub
+      if: steps.changes.outputs.unsub == 'true'
       run: |
         cd ./aws/lambda/email-unsub/
         rm -rf package lambda.zip
@@ -99,6 +153,7 @@ jobs:
         cd package && zip -r ../lambda.zip . && cd ..
 
     - name: Upload Lambda email-unsub
+      if: steps.changes.outputs.unsub == 'true'
       run: |
         cd ./aws/lambda/email-unsub/
         aws lambda update-function-code \
@@ -107,6 +162,7 @@ jobs:
 
 
     - name: Build Lambda aprs-to-discord
+      if: steps.changes.outputs.aprs == 'true'
       run: |
         cd ./aws/lambda/aprs-to-discord/
         rm -rf package lambda.zip
@@ -117,6 +173,7 @@ jobs:
         cd package && zip -r ../lambda.zip . && cd ..
 
     - name: Upload Lambda aprs-to-discord
+      if: steps.changes.outputs.aprs == 'true'
       run: |
         cd ./aws/lambda/aprs-to-discord/
         aws lambda update-function-code \

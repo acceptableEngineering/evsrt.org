@@ -163,10 +163,14 @@ def _format_message(active, now):
         comment = (entry.get("comment") or "").strip()
         if comment:
             lines.append(f"\U0001F4AC **Comment:** {comment}")
-        blocks.append("\n".join(lines))
+        # Prefix every line with "> " so Discord renders each station as a
+        # blockquote (left-border bar), keeping multiple stations in one
+        # message from running together.
+        blocks.append("\n".join(f"> {ln}" for ln in lines))
 
-    divider = "\n" + "─" * 12 + "\n"
-    message = "\U0001F4E1 **APRS Activity**\n\n" + divider.join(blocks)
+    # Blank line between quoted blocks so Discord draws a separate border
+    # bar per station rather than merging them into one quote.
+    message = "\U0001F4E1 **APRS Activity**\n\n" + "\n\n".join(blocks)
     # Discord hard-caps a message at 2000 chars.
     if len(message) > 1900:
         message = message[:1900].rstrip() + "\n… (truncated)"
