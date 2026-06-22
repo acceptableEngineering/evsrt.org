@@ -2,123 +2,166 @@ name: Build/Deploy
 
 on:
   push:
-    branches: main
+    branches:
+      - main
+    paths:
+      - 'site/**'
+      - 'aws/lambda/**'
+      - '.github/workflows/deploy.yml'
+  workflow_dispatch:
 
 jobs:
-  build-and-deploy:
+  # Figure out what actually changed in this push and build a dynamic deploy
+  # matrix for the Lambdas (plus a flag for the static site). Manual dispatch
+  # (or a change to this workflow file itself) deploys everything; otherwise
+  # only the directories that were touched get deployed.
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.build-matrix.outputs.matrix }}
+      any:    ${{ steps.build-matrix.outputs.any }}
+      site:   ${{ steps.build-matrix.outputs.site }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            workflow:
+              - '.github/workflows/deploy.yml'
+            site:
+              - 'site/**'
+            EVSRT-Reminder:
+              - 'aws/lambda/discord-reminder-bot/**'
+            EVSRT-HamAlert:
+              - 'aws/lambda/discord-spot-bot/**'
+            HamPals-Email-Digest:
+              - 'aws/lambda/email-digest/**'
+            HamPals-Email-Unsub:
+              - 'aws/lambda/email-unsub/**'
+            HamPals-APRS-Watch:
+              - 'aws/lambda/aprs-to-discord/**'
+
+      - id: build-matrix
+        env:
+          ALL_ENTRIES: |
+            [
+              {"function":"EVSRT-Reminder","path":"aws/lambda/discord-reminder-bot","python_version":"3.11"},
+              {"function":"EVSRT-HamAlert","path":"aws/lambda/discord-spot-bot","python_version":"3.11"},
+              {"function":"HamPals-Email-Digest","path":"aws/lambda/email-digest","python_version":"3.11"},
+              {"function":"HamPals-Email-Unsub","path":"aws/lambda/email-unsub","python_version":"3.11"},
+              {"function":"HamPals-APRS-Watch","path":"aws/lambda/aprs-to-discord","python_version":"3.11"}
+            ]
+          CHANGED: ${{ steps.filter.outputs.changes }}
+          SITE_CHANGED: ${{ steps.filter.outputs.site }}
+          WORKFLOW_CHANGED: ${{ steps.filter.outputs.workflow }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          python3 <<'PY'
+          import json, os
+          all_entries = json.loads(os.environ["ALL_ENTRIES"])
+          # dorny/paths-filter returns `changes` as a JSON array of group names that matched.
+          changed = set(json.loads(os.environ["CHANGED"]))
+          workflow_changed = os.environ["WORKFLOW_CHANGED"] == "true"
+          site_changed = os.environ["SITE_CHANGED"] == "true"
+          event = os.environ["EVENT_NAME"]
+
+          deploy_all = event == "workflow_dispatch" or workflow_changed
+          if deploy_all:
+              selected = all_entries
+              site = True
+              reason = "manual dispatch or workflow file changed -- deploying everything"
+          else:
+              selected = [e for e in all_entries if e["function"] in changed]
+              site = site_changed
+              reason = f"deploying lambdas={[e['function'] for e in selected]} site={site}"
+
+          out = json.dumps({"include": selected})
+          with open(os.environ["GITHUB_OUTPUT"], "a") as f:
+              f.write(f"matrix={out}\n")
+              f.write(f"any={'true' if selected else 'false'}\n")
+              f.write(f"site={'true' if site else 'false'}\n")
+          print(reason)
+          PY
+
+  site:
+    needs: changes
+    if: needs.changes.outputs.site == 'true'
     runs-on: ubuntu-latest
     steps:
-    - name: Checkout
-      uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
-    - name: Configure AWS CLI SDK
-      uses: aws-actions/configure-aws-credentials@v2
-      with:
-        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-        aws-region: us-east-1
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
 
-    - name: Deploy static content to S3
-      env:
-        AWS_S3_BUCKET_NAME: ${{ secrets.AWS_S3_BUCKET_NAME }}
-      run: |
-        GIT_BRANCH_SHORT=$(echo ${GITHUB_REF} | awk '{split($0,a,"/"); print a[3]}')
-        S3_DEST=${AWS_S3_BUCKET_NAME}/${GIT_BRANCH_SHORT}
+      - name: Deploy static content to S3
+        env:
+          AWS_S3_BUCKET_NAME: ${{ secrets.AWS_S3_BUCKET_NAME }}
+        run: |
+          GIT_BRANCH_SHORT=$(echo ${GITHUB_REF} | awk '{split($0,a,"/"); print a[3]}')
+          S3_DEST=${AWS_S3_BUCKET_NAME}/${GIT_BRANCH_SHORT}
 
-        if [ "${GIT_BRANCH_SHORT}" == 'main' ]; then
-          S3_DEST=${AWS_S3_BUCKET_NAME}
-        fi
+          if [ "${GIT_BRANCH_SHORT}" == 'main' ]; then
+            S3_DEST=${AWS_S3_BUCKET_NAME}
+          fi
 
-        aws s3 sync ./site/ s3://${S3_DEST}/ --region us-west-2 --cache-control max-age=120,must-revalidate --delete
+          aws s3 sync ./site/ s3://${S3_DEST}/ --region us-west-2 --cache-control max-age=120,must-revalidate --delete
 
-    - name: Set up Python
-      uses: actions/setup-python@v4
-      with:
-        python-version: '3.11'
+  deploy:
+    needs: changes
+    if: needs.changes.outputs.any == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      # Consume the dynamic matrix produced by the `changes` job -- one deploy
+      # job per changed Lambda, each carrying its function name, source path,
+      # and Python version.
+      matrix: ${{ fromJson(needs.changes.outputs.matrix) }}
 
-    - name: Build Lambda discord-reminder-bot
-      run: |
-        cd ./aws/lambda/discord-reminder-bot/
-        python -m pip install --upgrade pip
-        mkdir -p package
-        pip install -r requirements.txt -t package/
-        cp lambda_function.py package/
-        cd package && zip -r ../lambda.zip . && cd ..
+    steps:
+      - uses: actions/checkout@v4
 
-    - name: Upload Lambda discord-reminder-bot
-      run: |
-        cd ./aws/lambda/discord-reminder-bot/
-        aws lambda update-function-code \
-          --function-name EVSRT-Reminder \
-          --zip-file fileb://lambda.zip
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python_version }}
 
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
 
-    - name: Build Lambda discord-spot-bot
-      run: |
-        cd ./aws/lambda/discord-spot-bot/
-        python -m pip install --upgrade pip
-        mkdir -p package
-        pip install -r requirements.txt -t package/
-        cp lambda_function.py package/
-        cd package && zip -r ../lambda.zip . && cd ..
+      - name: Install Python deps
+        working-directory: ${{ matrix.path }}
+        # Force linux x86_64 wheels for the matching Python version so the
+        # compiled artifacts match the Lambda runtime exactly.
+        # --only-binary=:all: refuses source builds that would otherwise
+        # produce host-arch artifacts.
+        run: |
+          pip install --quiet \
+            --platform manylinux2014_x86_64 \
+            --implementation cp \
+            --python-version ${{ matrix.python_version }} \
+            --only-binary=:all: \
+            --target . \
+            -r requirements.txt
 
-    - name: Upload Lambda discord-spot-bot
-      run: |
-        cd ./aws/lambda/discord-spot-bot/
-        aws lambda update-function-code \
-          --function-name EVSRT-HamAlert \
-          --zip-file fileb://lambda.zip
+      - name: Zip
+        working-directory: ${{ matrix.path }}
+        run: zip -r -q "/tmp/${{ matrix.function }}.zip" .
 
+      - name: Update Lambda code
+        run: |
+          aws lambda update-function-code \
+            --function-name ${{ matrix.function }} \
+            --zip-file fileb:///tmp/${{ matrix.function }}.zip \
+            --no-cli-pager
 
-    - name: Build Lambda email-digest
-      run: |
-        cd ./aws/lambda/email-digest/
-        rm -rf package lambda.zip
-        python -m pip install --upgrade pip
-        mkdir -p package
-        pip install -r requirements.txt -t package/
-        cp lambda_function.py package/
-        cd package && zip -r ../lambda.zip . && cd ..
-
-    - name: Upload Lambda email-digest
-      run: |
-        cd ./aws/lambda/email-digest/
-        aws lambda update-function-code \
-          --function-name HamPals-Email-Digest \
-          --zip-file fileb://lambda.zip
-
-
-    - name: Build Lambda email-unsub
-      run: |
-        cd ./aws/lambda/email-unsub/
-        rm -rf package lambda.zip
-        python -m pip install --upgrade pip
-        mkdir -p package
-        pip install -r requirements.txt -t package/
-        cp lambda_function.py package/
-        cd package && zip -r ../lambda.zip . && cd ..
-
-    - name: Upload Lambda email-unsub
-      run: |
-        cd ./aws/lambda/email-unsub/
-        aws lambda update-function-code \
-          --function-name HamPals-Email-Unsub \
-          --zip-file fileb://lambda.zip
-
-
-    - name: Build Lambda aprs-to-discord
-      run: |
-        cd ./aws/lambda/aprs-to-discord/
-        rm -rf package lambda.zip
-        python -m pip install --upgrade pip
-        mkdir -p package
-        pip install -r requirements.txt -t package/
-        cp lambda_function.py callsigns.txt package/
-        cd package && zip -r ../lambda.zip . && cd ..
-
-    - name: Upload Lambda aprs-to-discord
-      run: |
-        cd ./aws/lambda/aprs-to-discord/
-        aws lambda update-function-code \
-          --function-name HamPals-APRS-Watch \
-          --zip-file fileb://lambda.zip
+      - name: Wait for update to finish
+        run: aws lambda wait function-updated --function-name ${{ matrix.function }}
