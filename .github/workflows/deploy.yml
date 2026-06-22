@@ -139,18 +139,16 @@ jobs:
 
       - name: Install Python deps
         working-directory: ${{ matrix.path }}
-        # Force linux x86_64 wheels for the matching Python version so the
-        # compiled artifacts match the Lambda runtime exactly.
-        # --only-binary=:all: refuses source builds that would otherwise
-        # produce host-arch artifacts.
-        run: |
-          pip install --quiet \
-            --platform manylinux2014_x86_64 \
-            --implementation cp \
-            --python-version ${{ matrix.python_version }} \
-            --only-binary=:all: \
-            --target . \
-            -r requirements.txt
+        # The runner (ubuntu-latest x86_64 + setup-python above) already
+        # matches the Lambda runtime (Amazon Linux x86_64, same Python), so
+        # a plain target install produces Lambda-compatible artifacts -- pip
+        # picks the manylinux x86_64 wheels for compiled deps (cryptography,
+        # cffi) automatically. We deliberately do NOT use the
+        # --platform/--only-binary cross-build flags here: those require
+        # every pinned dep to ship a wheel, which starkbank-ecdsa==2.2.0
+        # (email-digest) does not -- it's a pure-Python sdist, and forcing
+        # binary-only broke the deploy.
+        run: pip install --quiet --target . -r requirements.txt
 
       - name: Zip
         working-directory: ${{ matrix.path }}
