@@ -24,14 +24,18 @@ def lambda_handler(event, context):
     discord_webhook = os.environ.get('discord_webhook')
     mattermost_webhook = os.environ.get('mattermost_webhook')
 
-    # Format Discord message
+    # Format Discord message. Every line is prefixed with "> " so Discord
+    # renders the whole spot as one blockquote -- a left-border bar that
+    # visually boxes each alert and keeps back-to-back spots from running
+    # together in the channel.
     discord_message = {
-        "content": f"📡 **New {source.upper()} Spot Alert!**\n\n"
-                   f"📌 **Callsign:** {full_callsign}\n"
-                   f"🔊 **Frequency:** {frequency} MHz ({band})\n"
-                   f"🎛️ **Mode:** {mode.upper()} ({mode_detail.upper()})\n"
-                   f"👤 **Spotter:** {spotter}\n"
-                   f"💬 **Comment:** {comment}\n",
+        "content": f"> 📡 **New {source.upper()} Spot Alert!**\n"
+                   f"> \n"
+                   f"> 📌 **Callsign:** {full_callsign}\n"
+                   f"> 🔊 **Frequency:** {frequency} MHz ({band})\n"
+                   f"> 🎛️ **Mode:** {mode.upper()} ({mode_detail.upper()})\n"
+                   f"> 👤 **Spotter:** {spotter}\n"
+                   f"> 💬 **Comment:** {comment}",
         "username": "HamBOT 🐷"
     }
 
