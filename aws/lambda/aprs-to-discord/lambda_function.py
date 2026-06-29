@@ -1,46 +1,76 @@
-"""aprs-to-discord -- poll aprs.fi for APRS activity from a watch list of
-callsigns and post any recent hits to a Discord channel via webhook.
+"""aprs-to-discord -- maintain a single Discord "status board" message
+showing APRS activity for a user-managed watch list of callsigns.
 
-Callsigns are read from `callsigns.txt` (one per line, '#' comments and
-blank lines ignored), bundled alongside this file in the deploy zip.
+Runs on a schedule (EventBridge, e.g. every 10 minutes). Each run:
+  1. reads the watch list from DynamoDB (managed by the companion
+     aprs-watch-commands Lambda's /watch and /unwatch slash commands),
+  2. queries aprs.fi for those callsigns,
+  3. edits ONE pinned Discord message in place to reflect current status,
+     rather than posting a new message each cycle (which made the channel
+     an endless feed of stale info).
 
-Intended to run on a schedule (EventBridge, e.g. every 10 minutes). Each
-run queries aprs.fi for the watch list and posts the callsigns heard
-within the last LOOKBACK_SECONDS.
+The board's message id is stored in SSM Parameter Store so the message
+persists across invocations. On first run (or if the message was deleted)
+the board is created fresh and its id saved.
+
+Editing uses the webhook itself -- a webhook can edit its own messages via
+PATCH /webhooks/{id}/{token}/messages/{message_id} -- so no bot token is
+needed here. (The bot token is only used once, out of band, to register
+the slash commands; see the README.)
 
 Env vars (set on the Lambda):
-    discord_webhook    Discord webhook URL              (REQUIRED)
-    aprs_fi_api_key    aprs.fi API key                  (REQUIRED)
-    lookback_seconds   "heard within" window, seconds   (optional, default 600)
-
-NOTE on duplicates: this is stateless -- it reports anything heard in the
-lookback window, so a station that keeps beaconing will be reported on
-each run while it stays active. If you'd rather only announce when a
-callsign *becomes* active (and not repeat while it stays up), that needs a
-small state store (DynamoDB/S3) to remember what was reported last run --
-straightforward to add as a follow-up.
+    discord_webhook    Discord webhook URL                 (REQUIRED)
+    aprs_fi_api_key    aprs.fi API key                     (REQUIRED)
+    lookback_seconds   "active" window, seconds            (optional, default 600)
+    watch_table        DynamoDB watch-list table name      (optional, default "evsrt-aprs-watch")
+    board_param        SSM param holding the board msg id  (optional, default "/evsrt/aprs/board_message_id")
 """
 
 import json
 import os
 import time
-from pathlib import Path
 
+import boto3
 import requests
 
 APRS_API = "https://api.aprs.fi/api/get"
-# aprs.fi asks for a descriptive User-Agent and caps each query at 20 targets.
-USER_AGENT = "evsrt-aprs-to-discord/1.0 (+https://evsrt.org)"
-APRS_MAX_TARGETS = 20
+USER_AGENT = "evsrt-aprs-watch/2.0 (+https://evsrt.org)"
+APRS_MAX_TARGETS = 20  # aprs.fi caps each query at 20 targets
+
+WATCH_TABLE = os.environ.get("watch_table", "evsrt-aprs-watch")
+BOARD_PARAM = os.environ.get("board_param", "/evsrt/aprs/board_message_id")
+
+_ddb = boto3.resource("dynamodb")
+_ssm = boto3.client("ssm")
+
+
+# --- watch list (DynamoDB) -------------------------------------------------
+
+def _load_watchlist():
+    """Distinct enrolled callsign tokens from the watch table. Each item is
+    a (callsign, user_id) pair, so multiple users may watch the same call;
+    we return the unique set of callsign tokens (as users typed them)."""
+    table = _ddb.Table(WATCH_TABLE)
+    seen, out = set(), []
+    resp = table.scan(ProjectionExpression="callsign")
+    items = resp.get("Items", [])
+    while "LastEvaluatedKey" in resp:
+        resp = table.scan(ProjectionExpression="callsign",
+                          ExclusiveStartKey=resp["LastEvaluatedKey"])
+        items += resp.get("Items", [])
+    for it in items:
+        cs = (it.get("callsign") or "").strip().upper()
+        if cs and cs not in seen:
+            seen.add(cs)
+            out.append(cs)
+    out.sort()
+    return out
 
 
 def _expand_callsign(token):
-    """Expand a watch-list token into concrete aprs.fi targets.
-
-    aprs.fi matches exact identifiers (no wildcards), so a trailing '*'
-    is expanded here: "BASE*" (or "BASE-*") means the base call on any
-    SSID, i.e. the bare base (SSID 0) plus BASE-1 .. BASE-15.
-    """
+    """A trailing '*' (e.g. 'WZ1EEE*') means the base call on any SSID:
+    the bare base plus -1..-15. aprs.fi has no wildcard matching, so we
+    expand here before querying."""
     if token.endswith("*"):
         base = token[:-1].rstrip("-")
         if not base:
@@ -49,24 +79,7 @@ def _expand_callsign(token):
     return [token]
 
 
-def _load_callsigns():
-    """Watch list from callsigns.txt -- one per line, '#' comments ignored.
-    Trailing-'*' wildcards are expanded to every SSID (see _expand_callsign)."""
-    path = Path(__file__).parent / "callsigns.txt"
-    if not path.exists():
-        print("callsigns.txt not found next to lambda_function.py")
-        return []
-    seen, out = set(), []
-    for line in path.read_text(encoding="utf-8").splitlines():
-        cs = line.strip().upper()
-        if not cs or cs.startswith("#"):
-            continue
-        for target in _expand_callsign(cs):
-            if target not in seen:
-                seen.add(target)
-                out.append(target)
-    return out
-
+# --- aprs.fi ---------------------------------------------------------------
 
 def _chunks(items, n):
     for i in range(0, len(items), n):
@@ -74,56 +87,38 @@ def _chunks(items, n):
 
 
 def _query_aprs(callsigns, api_key):
-    """Return aprs.fi location entries for the watch list."""
-    entries = []
+    """Return {uppercased name -> aprs.fi loc entry} for the given calls."""
+    by_name = {}
     for batch in _chunks(callsigns, APRS_MAX_TARGETS):
-        params = {
-            "name": ",".join(batch),
-            "what": "loc",
-            "apikey": api_key,
-            "format": "json",
-        }
-        resp = requests.get(
-            APRS_API, params=params,
-            headers={"User-Agent": USER_AGENT}, timeout=20,
-        )
+        params = {"name": ",".join(batch), "what": "loc",
+                  "apikey": api_key, "format": "json"}
+        resp = requests.get(APRS_API, params=params,
+                            headers={"User-Agent": USER_AGENT}, timeout=20)
         resp.raise_for_status()
         data = resp.json()
         if data.get("result") != "ok":
-            print("aprs.fi returned non-ok:", data.get("description") or data)
+            print("aprs.fi non-ok:", data.get("description") or data)
             continue
-        entries.extend(data.get("entries", []))
-    return entries
+        for e in data.get("entries", []):
+            n = (e.get("name") or "").upper()
+            if n:
+                by_name[n] = e
+    return by_name
 
 
 def _via(entry):
-    """Human 'Via' summary for a station, from its path + tocall.
-
-    The path's q-construct records how the packet entered APRS-IS, and the
-    callsign right after it is the gateway/igate that fed it in:
-      qAR / qAo / qAU  -> received from RF, gated by the next station
-      qAC / qAS / qAX  -> injected over the internet (no RF hop)
-    DMR gateways (Brandmeister) gate via qAR too, so distinguish them: a
-    'DMR' path token and/or an APBM* tocall means it came in over DMR, not
-    over-the-air VHF/UHF RF -- report those as DMR, not RF.
-    Returns a display string, or None if it can't be determined.
-    """
+    """'Via' summary from the path q-construct: RF -> igate, DMR -> gateway,
+    or Internet. None if undeterminable."""
     path = entry.get("path") or ""
     dstcall = (entry.get("dstcall") or "").upper()
     tokens = [t for t in path.split(",") if t]
-
     q = next((t for t in tokens if t.lower().startswith("qa")), None)
     igate = None
     if q is not None:
         idx = tokens.index(q)
         igate = tokens[idx + 1] if idx + 1 < len(tokens) else None
-
-    is_dmr = dstcall.startswith("APBM") or any(
-        t.upper().rstrip("*") == "DMR" for t in tokens
-    )
-    if is_dmr:
+    if dstcall.startswith("APBM") or any(t.upper().rstrip("*") == "DMR" for t in tokens):
         return f"DMR → {igate}" if igate else "DMR"
-
     if q is None:
         return None
     ql = q.lower()
@@ -134,82 +129,142 @@ def _via(entry):
     return None
 
 
-def _format_message(active, now):
-    """Spot-bot-style: a header, then one labelled block per station."""
-    blocks = []
-    for entry, last in sorted(active, key=lambda x: x[1], reverse=True):
-        name = entry.get("name", "?")
-        mins = max(0, now - last) // 60
-        heard = "just now" if mins == 0 else f"{mins} min ago"
-
-        lines = [
-            f"\U0001F4FB **Callsign:** {name}",
-            f"\U0001F552 **Heard:** {heard}",
-        ]
-        lat, lng = entry.get("lat"), entry.get("lng")
-        if lat and lng:
-            lines.append(f"\U0001F4CD **Position:** {lat}, {lng}")
-            lines.append(f"\U0001F517 https://aprs.fi/?call={name}")
-        via = _via(entry)
-        if via:
-            lines.append(f"\U0001F4F6 **Via:** {via}")
+def _best_entry(token, by_name):
+    """For an enrolled token, find the most-recently-heard aprs.fi entry.
+    For a wildcard token this scans all its SSID expansions and returns the
+    freshest; returns (entry, last_epoch) or (None, None)."""
+    best, best_last = None, None
+    for cand in _expand_callsign(token):
+        e = by_name.get(cand.upper())
+        if not e:
+            continue
         try:
-            speed = float(entry["speed"]) if entry.get("speed") not in (None, "") else 0.0
+            last = int(e.get("lasttime", 0))
         except (TypeError, ValueError):
-            speed = 0.0
-        if speed > 0:
-            mph = round(speed * 0.621371)
-            lines.append(f"\U0001F697 **Speed:** {mph}MPH ({round(speed)} km/h)")
-        comment = (entry.get("comment") or "").strip()
-        if comment:
-            lines.append(f"\U0001F4AC **Comment:** {comment}")
-        # Prefix every line with "> " so Discord renders each station as a
-        # blockquote (left-border bar), keeping multiple stations in one
-        # message from running together.
-        blocks.append("\n".join(f"> {ln}" for ln in lines))
+            continue
+        if best_last is None or last > best_last:
+            best, best_last = e, last
+    return best, best_last
 
-    # Blank line between quoted blocks so Discord draws a separate border
-    # bar per station rather than merging them into one quote.
-    message = "\U0001F4E1 **APRS Activity**\n\n" + "\n\n".join(blocks)
-    # Discord hard-caps a message at 2000 chars.
-    if len(message) > 1900:
-        message = message[:1900].rstrip() + "\n… (truncated)"
-    return message
+
+# --- board rendering -------------------------------------------------------
+
+def _rel(now, last):
+    secs = max(0, now - last)
+    if secs < 90:
+        return "just now"
+    mins = secs // 60
+    if mins < 60:
+        return f"{mins} min ago"
+    hrs = mins // 60
+    if hrs < 24:
+        return f"{hrs}h ago"
+    return f"{hrs // 24}d ago"
+
+
+def _board_line(token, by_name, now, lookback):
+    entry, last = _best_entry(token, by_name)
+    if entry is None or last is None:
+        return f"⚫ **{token}** — no APRS data"  # black circle
+    heard = entry.get("name", token)
+    parts = []
+    via = _via(entry)
+    if via:
+        parts.append(via)
+    parts.append(f"[map](https://aprs.fi/?call={heard})")
+    detail = " · ".join(parts)
+    if now - last <= lookback:
+        dot = "\U0001F7E2"  # green
+        label = token if heard.upper() == token.upper() else f"{token} ({heard})"
+        return f"{dot} **{label}** — {_rel(now, last)} · {detail}"
+    dot = "⚪"  # white circle (idle)
+    return f"{dot} **{token}** — last heard {_rel(now, last)} · {detail}"
+
+
+def _build_embed(watchlist, by_name, now, lookback):
+    if not watchlist:
+        desc = "_No callsigns are being watched._\nUse `/watch <callsign>` to add one."
+    else:
+        lines = [_board_line(t, by_name, now, lookback) for t in watchlist]
+        desc = "\n".join(lines)[:4000]
+    active = sum(
+        1 for t in watchlist
+        if (lambda e_l: e_l[1] is not None and now - e_l[1] <= lookback)(_best_entry(t, by_name))
+    )
+    return {
+        "title": "\U0001F4E1 APRS Watch — Status Board",
+        "description": desc,
+        "color": 0x2ECC71 if active else 0x95A5A6,
+        "footer": {"text": f"{active} active · {len(watchlist)} watched · updated"},
+        # Discord renders this as a localized "Updated <time>" in the footer.
+        "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now)),
+    }
+
+
+# --- board message persistence (create / edit) -----------------------------
+
+def _get_board_id():
+    try:
+        return _ssm.get_parameter(Name=BOARD_PARAM)["Parameter"]["Value"]
+    except _ssm.exceptions.ParameterNotFound:
+        return None
+
+
+def _save_board_id(message_id):
+    _ssm.put_parameter(Name=BOARD_PARAM, Value=message_id, Type="String", Overwrite=True)
+
+
+def _create_board(webhook, embed):
+    resp = requests.post(f"{webhook}?wait=true",
+                         json={"embeds": [embed], "username": "APRS Watch \U0001F4E1"},
+                         timeout=20)
+    resp.raise_for_status()
+    mid = resp.json()["id"]
+    _save_board_id(mid)
+    print(f"created board message {mid}")
+    return mid
+
+
+def _publish_board(webhook, embed):
+    """Edit the existing board message in place; (re)create it if missing."""
+    mid = _get_board_id()
+    if mid:
+        resp = requests.patch(f"{webhook}/messages/{mid}",
+                              json={"embeds": [embed]}, timeout=20)
+        if resp.status_code == 404:
+            print(f"board message {mid} gone; recreating")
+            _create_board(webhook, embed)
+        else:
+            resp.raise_for_status()
+    else:
+        _create_board(webhook, embed)
 
 
 def lambda_handler(event, context):
-    discord_webhook = os.environ.get("discord_webhook")
+    webhook = os.environ.get("discord_webhook")
     api_key = os.environ.get("aprs_fi_api_key")
     lookback = int(os.environ.get("lookback_seconds", "600"))
+    if not webhook or not api_key:
+        msg = "discord_webhook and aprs_fi_api_key are required"
+        print(msg)
+        return {"statusCode": 500, "body": msg}
 
-    if not api_key:
-        print("aprs_fi_api_key not configured")
-        return {"statusCode": 500, "body": "aprs_fi_api_key not configured"}
-    if not discord_webhook:
-        print("discord_webhook not configured")
-        return {"statusCode": 500, "body": "discord_webhook not configured"}
+    watchlist = _load_watchlist()
+    # Expand wildcards for the aprs.fi query; the board still shows the
+    # original enrolled tokens.
+    query_calls = []
+    seen = set()
+    for t in watchlist:
+        for c in _expand_callsign(t):
+            cu = c.upper()
+            if cu not in seen:
+                seen.add(cu)
+                query_calls.append(c)
 
-    callsigns = _load_callsigns()
-    if not callsigns:
-        return {"statusCode": 200, "body": "no callsigns to check"}
-
-    entries = _query_aprs(callsigns, api_key)
+    by_name = _query_aprs(query_calls, api_key) if query_calls else {}
     now = int(time.time())
-    active = []
-    for entry in entries:
-        try:
-            last = int(entry.get("lasttime", 0))
-        except (TypeError, ValueError):
-            continue
-        if last and now - last <= lookback:
-            active.append((entry, last))
-
-    if not active:
-        print(f"no activity in last {lookback}s among {len(callsigns)} callsign(s)")
-        return {"statusCode": 200, "body": "no recent activity"}
-
-    message = {"content": _format_message(active, now), "username": "APRS Watch \U0001F4E1"}
-    resp = requests.post(discord_webhook, json=message, timeout=20)
-    resp.raise_for_status()
-    print(f"posted {len(active)} active callsign(s) to Discord")
-    return {"statusCode": 200, "body": json.dumps({"active": len(active)})}
+    embed = _build_embed(watchlist, by_name, now, lookback)
+    _publish_board(webhook, embed)
+    return {"statusCode": 200,
+            "body": json.dumps({"watched": len(watchlist),
+                                 "queried": len(query_calls)})}

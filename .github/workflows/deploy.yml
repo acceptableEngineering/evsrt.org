@@ -44,6 +44,8 @@ jobs:
               - 'aws/lambda/email-unsub/**'
             HamPals-APRS-Watch:
               - 'aws/lambda/aprs-to-discord/**'
+            HamPals-APRS-Commands:
+              - 'aws/lambda/aprs-watch-commands/**'
 
       - id: build-matrix
         env:
@@ -53,7 +55,8 @@ jobs:
               {"function":"EVSRT-HamAlert","path":"aws/lambda/discord-spot-bot","python_version":"3.11"},
               {"function":"HamPals-Email-Digest","path":"aws/lambda/email-digest","python_version":"3.11"},
               {"function":"HamPals-Email-Unsub","path":"aws/lambda/email-unsub","python_version":"3.11"},
-              {"function":"HamPals-APRS-Watch","path":"aws/lambda/aprs-to-discord","python_version":"3.11"}
+              {"function":"HamPals-APRS-Watch","path":"aws/lambda/aprs-to-discord","python_version":"3.11"},
+              {"function":"HamPals-APRS-Commands","path":"aws/lambda/aprs-watch-commands","python_version":"3.11"}
             ]
           CHANGED: ${{ steps.filter.outputs.changes }}
           SITE_CHANGED: ${{ steps.filter.outputs.site }}
