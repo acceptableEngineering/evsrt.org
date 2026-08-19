@@ -33,6 +33,15 @@ APRS_API = "https://api.aprs.fi/api/get"
 USER_AGENT = "evsrt-aprs-to-discord/1.0 (+https://evsrt.org)"
 APRS_MAX_TARGETS = 20
 
+# Callsigns whose DMR-gateway spots we skip (e.g. a base station duplicated onto
+# APRS via DMR, which we don't want reported). Comma-separated env override;
+# matched on the base call, so every SSID counts.
+IGNORE_DMR_CALLSIGNS = {
+    c.strip().upper()
+    for c in os.environ.get("ignore_dmr_callsigns", "K3MGM").split(",")
+    if c.strip()
+}
+
 
 def _expand_callsign(token):
     """Expand a watch-list token into concrete aprs.fi targets.
@@ -96,6 +105,17 @@ def _query_aprs(callsigns, api_key):
     return entries
 
 
+def _is_dmr(entry):
+    """True if this position came in over a DMR->APRS gateway: a 'DMR' path
+    token and/or an APBM* tocall (Brandmeister)."""
+    path = entry.get("path") or ""
+    dstcall = (entry.get("dstcall") or "").upper()
+    tokens = [t for t in path.split(",") if t]
+    return dstcall.startswith("APBM") or any(
+        t.upper().rstrip("*") == "DMR" for t in tokens
+    )
+
+
 def _via(entry):
     """Human 'Via' summary for a station, from its path + tocall.
 
@@ -109,7 +129,6 @@ def _via(entry):
     Returns a display string, or None if it can't be determined.
     """
     path = entry.get("path") or ""
-    dstcall = (entry.get("dstcall") or "").upper()
     tokens = [t for t in path.split(",") if t]
 
     q = next((t for t in tokens if t.lower().startswith("qa")), None)
@@ -118,10 +137,7 @@ def _via(entry):
         idx = tokens.index(q)
         igate = tokens[idx + 1] if idx + 1 < len(tokens) else None
 
-    is_dmr = dstcall.startswith("APBM") or any(
-        t.upper().rstrip("*") == "DMR" for t in tokens
-    )
-    if is_dmr:
+    if _is_dmr(entry):
         return f"DMR → {igate}" if igate else "DMR"
 
     if q is None:
@@ -200,6 +216,11 @@ def lambda_handler(event, context):
         try:
             last = int(entry.get("lasttime", 0))
         except (TypeError, ValueError):
+            continue
+        # Skip DMR-gateway spots for configured callsigns (e.g. K3MGM) so a DMR
+        # position isn't reported for them. Match on the base call (strip -SSID).
+        name = (entry.get("name") or "").upper()
+        if name.split("-")[0] in IGNORE_DMR_CALLSIGNS and _is_dmr(entry):
             continue
         if last and now - last <= lookback:
             active.append((entry, last))
